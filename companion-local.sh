@@ -2,7 +2,14 @@
 # Opens a screen session with a captured local shell on the left and Claude on the right.
 # Requires: screen, claude CLI, script (util-linux).
 
-command -v screen &>/dev/null || { echo "Error: 'screen' not found. Install it with: sudo apt install screen"; exit 1; }
+if ! command -v screen &>/dev/null; then
+    if command -v apt-get &>/dev/null;   then INSTALL="sudo apt-get install screen"
+    elif command -v dnf &>/dev/null;     then INSTALL="sudo dnf install screen"
+    elif command -v brew &>/dev/null;    then INSTALL="brew install screen"
+    else                                      INSTALL="<your package manager> install screen"
+    fi
+    echo "Error: 'screen' not found. Install it with: $INSTALL"; exit 1
+fi
 
 SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 LOGFILE="$SESSIONS_DIR/local-$(date +%s).log"

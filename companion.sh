@@ -4,7 +4,14 @@
 # Requires: docker (with 'ssh-companion' container running), screen, claude CLI.
 
 [[ $# -eq 0 ]] && { echo "Usage: companion.sh ssh [-i key.pem] user@hostname"; exit 1; }
-command -v screen &>/dev/null || { echo "Error: 'screen' not found. Install it with: sudo apt install screen"; exit 1; }
+if ! command -v screen &>/dev/null; then
+    if command -v apt-get &>/dev/null;   then INSTALL="sudo apt-get install screen"
+    elif command -v dnf &>/dev/null;     then INSTALL="sudo dnf install screen"
+    elif command -v brew &>/dev/null;    then INSTALL="brew install screen"
+    else                                      INSTALL="<your package manager> install screen"
+    fi
+    echo "Error: 'screen' not found. Install it with: $INSTALL"; exit 1
+fi
 
 DEST=""
 for arg in "$@"; do
