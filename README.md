@@ -1,11 +1,19 @@
 # ssh-companion
 
-![ssh-companion](icon.png)
+<p align="center">
+<img src="icon.png" alt="ssh-companion" width="350">
+</p>
 
 > "I am always here if you need me, though I confess I find the most enjoyment in simply observing."
 > — *Daneel Olivaw, The Caves of Steel* (Isaac Asimov)
 
 An MCP server that lets Claude observe your SSH and local shell sessions in real time and advise on support problems — performance issues, log analysis, error detection — without touching anything.
+
+## 🍭 How it looks
+
+<p align="center">
+<img src="screenshots/1.png" alt="ssh-companion screenshot" width="600">
+</p>
 
 ## 🔍 How it works
 

@@ -1,2 +1,1 @@
--add screenshot to the readme 
 -allow to run companion with --instructions FILE
