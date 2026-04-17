@@ -1,0 +1,8 @@
+services:
+  ssh-companion:
+    build: .
+    container_name: ssh-companion
+    volumes:
+      - "/tmp:/tmp"
+      - "${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}:/sessions"
+    restart: unless-stopped

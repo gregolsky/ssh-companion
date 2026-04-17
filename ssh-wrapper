@@ -9,4 +9,5 @@ HOSTNAME="${HOSTNAME%%:*}"
 HOSTNAME="${HOSTNAME:-unknown}"
 
 LOGFILE="/sessions/${HOSTNAME}-$(date +%s).log"
-exec script -q -f "$LOGFILE" /usr/bin/ssh "$@"
+SSH_CMD="/usr/bin/ssh $(printf '%q ' "$@")"
+exec script -q -f -e -c "$SSH_CMD" "$LOGFILE"

@@ -1,5 +1,10 @@
 # ssh-companion-mcp
 
+![ssh-companion](icon.png)
+
+> "I am always here if you need me, though I confess I find the most enjoyment in simply observing."
+> — *Daneel Olivaw, The Caves of Steel* (Isaac Asimov)
+
 An MCP server that lets Claude observe your SSH sessions in real time and advise on support problems — performance issues, log analysis, error detection — without touching the remote servers.
 
 ## How it works
@@ -25,7 +30,7 @@ Claude Code  →  docker exec -i ssh-companion python /app/server.py
 ## Prerequisites
 
 - Docker
-- tmux (Linux) or Windows Terminal / `wt` (Windows)
+- screen (Linux) or Windows Terminal / `wt` (Windows)
 - [Claude Code CLI](https://claude.ai/code)
 
 ## Setup
@@ -42,12 +47,12 @@ docker build -t ssh-companion-mcp .
 
 ```bash
 docker run -d --name ssh-companion \
-  -v ~/.ssh:/root/.ssh:ro \
-  -v /tmp/ssh-companion-sessions:/sessions \
+  -v /tmp:/tmp \
+  -v ~/.ssh-companion-sessions:/sessions \
   ssh-companion-mcp
 ```
 
-The `~/.ssh` mount gives the container your SSH keys (read-only). Sessions are logged to `/tmp/ssh-companion-sessions/` on your host.
+The `/tmp` mount lets the container access ephemeral SSH keys placed there by your key-provisioning workflow (e.g. `ssh -i /tmp/temp-key`). Sessions are logged to `~/.ssh-companion-sessions/` on your host.
 
 ### 3. Register the MCP server with Claude Code
 
@@ -74,11 +79,11 @@ Or add manually to `~/.claude/settings.json`:
 
 Opens your SSH session on the left and Claude on the right, side by side.
 
-**Linux (tmux):**
+**Linux (screen):**
 ```bash
 chmod +x companion.sh
 ./companion.sh ssh ubuntu@prod-db-1
-./companion.sh ssh -i ~/.ssh/key.pem ubuntu@prod-db-1
+./companion.sh ssh -i /tmp/temp-key ubuntu@prod-db-1
 ```
 
 **Windows (Windows Terminal):**
@@ -145,12 +150,12 @@ ssh user@prod-web-2
 docker stop ssh-companion && docker rm ssh-companion
 
 # Clear session logs (optional)
-rm -rf /tmp/ssh-companion-sessions
+rm -rf ~/.ssh-companion-sessions
 ```
 
 ## Notes
 
 - **Read-only**: Claude can only observe. No commands are sent to any session.
 - **Nested tmux**: works fine. The capture is at the SSH byte stream level, so what remote tmux renders is captured as-is and ANSI-stripped for Claude.
-- **Key prefix clash**: if the remote machine runs tmux, you'll need `C-b b` to send `C-b` to the remote (standard nested tmux behavior). This is a tmux limitation, not specific to this tool.
-- **SSH keys**: the container uses your `~/.ssh` keys read-only. SSH agent forwarding (`-A`) is supported.
+- **No prefix clash**: `companion.sh` uses GNU `screen` locally (prefix `C-a`), so `C-b` passes cleanly through to your remote tmux session.
+- **SSH keys**: the `/tmp:/tmp` mount means any key at `/tmp/temp-key` on the host is visible inside the container at the same path — use `ssh -i /tmp/temp-key` as normal. SSH agent forwarding (`-A`) is also supported.
