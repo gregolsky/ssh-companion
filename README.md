@@ -5,26 +5,26 @@
 > "I am always here if you need me, though I confess I find the most enjoyment in simply observing."
 > — *Daneel Olivaw, The Caves of Steel* (Isaac Asimov)
 
-An MCP server that lets Claude observe your SSH sessions in real time and advise on support problems — performance issues, log analysis, error detection — without touching the remote servers.
+An MCP server that lets Claude observe your SSH and local shell sessions in real time and advise on support problems — performance issues, log analysis, error detection — without touching anything.
 
 ## How it works
 
-A Docker container acts as the SSH chokepoint. Every session you open through the container is silently captured via `script -f` to a log file. The MCP server reads those logs and exposes them to Claude. Works with nested tmux on the remote, any shell, any terminal — capture happens at the raw byte stream level before anything on the remote gets involved.
+A Docker container acts as the SSH chokepoint. Every session you open through the container is silently captured via `script` to a log file. Local sessions are captured the same way, directly on the host. The MCP server reads those logs and exposes them to Claude. Works with nested tmux on the remote, any shell, any terminal — capture happens at the raw byte stream level.
 
 ```
 Your terminal
     │
-    │  docker exec -it ssh-companion ssh user@prod-db-1
-    ▼
-Container (ssh-companion-mcp)
-    /usr/local/bin/ssh  ← wrapper
-         │  script -q -f /sessions/prod-db-1-<ts>.log /usr/bin/ssh ...
-         ▼
-    /sessions/prod-db-1-*.log  ← live-appended typescript files
-         ▲
+    ├── SSH session (via Docker wrapper)
+    │       docker exec -it ssh-companion ssh user@prod-db-1
+    │       → /sessions/prod-db-1-<ts>.log
+    │
+    └── Local session (companion-local.sh)
+            script -q -f ~/.ssh-companion-sessions/local-<ts>.log
+            → ~/.ssh-companion-sessions/local-<ts>.log
+                         ▲
     server.py  ← MCP server reads + strips ANSI
-         ▲
-Claude Code  →  docker exec -i ssh-companion python /app/server.py
+                         ▲
+    Claude Code  →  docker exec -i ssh-companion python /app/server.py
 ```
 
 ## Prerequisites
@@ -35,32 +35,29 @@ Claude Code  →  docker exec -i ssh-companion python /app/server.py
 
 ## Setup
 
-### 1. Build the container
+### 1. Build and start the container
 
 ```bash
 git clone <this-repo>
 cd ssh-companion-mcp
-docker build -t ssh-companion-mcp .
+./start-mcp-server.sh
 ```
 
-### 2. Start the container
+`start-mcp-server.sh` builds the image if needed and starts the container. Or use Docker Compose:
 
 ```bash
-docker run -d --name ssh-companion \
-  -v /tmp:/tmp \
-  -v ~/.ssh-companion-sessions:/sessions \
-  ssh-companion-mcp
+docker compose up -d
 ```
 
-The `/tmp` mount lets the container access ephemeral SSH keys placed there by your key-provisioning workflow (e.g. `ssh -i /tmp/temp-key`). Sessions are logged to `~/.ssh-companion-sessions/` on your host.
+### 2. Register the MCP server with Claude Code
 
-### 3. Register the MCP server with Claude Code
+The launch scripts (`companion.sh`, `companion-local.sh`) do this automatically. To register manually:
 
 ```bash
 claude mcp add ssh-companion-mcp docker -- exec -i ssh-companion python /app/server.py
 ```
 
-Or add manually to `~/.claude/settings.json`:
+Or add to `.mcp.json` in your project root for automatic registration when Claude Code opens that directory:
 
 ```json
 {
@@ -75,22 +72,31 @@ Or add manually to `~/.claude/settings.json`:
 
 ## Usage
 
-### One-liner launcher (recommended)
+### SSH session (Linux)
 
-Opens your SSH session on the left and Claude on the right, side by side.
+Opens the SSH session on the left and Claude on the right, side by side.
 
-**Linux (screen):**
 ```bash
-chmod +x companion.sh
 ./companion.sh ssh ubuntu@prod-db-1
 ./companion.sh ssh -i /tmp/temp-key ubuntu@prod-db-1
 ```
 
-**Windows (Windows Terminal):**
+### SSH session (Windows)
+
 ```powershell
 .\companion.ps1 ssh ubuntu@prod-db-1
 .\companion.ps1 ssh -i ~\.ssh\key.pem ubuntu@prod-db-1
 ```
+
+### Local shell session
+
+Observe a local bash session — no SSH, no Docker for the capture side.
+
+```bash
+./companion-local.sh
+```
+
+Claude sees it as hostname `local`: `focus_session("local")`.
 
 ### Manual SSH (if you prefer your own terminal layout)
 
@@ -133,7 +139,7 @@ or anything that looks like it needs attention.
 
 ## Multiple servers
 
-Each server gets its own log file(s) under `/sessions/<hostname>-<timestamp>.log`. Switching between servers just means telling Claude a different hostname — it reads the right log automatically.
+Each server gets its own log file(s) under `~/.ssh-companion-sessions/<hostname>-<timestamp>.log`. Switching between servers just means telling Claude a different hostname — it reads the right log automatically.
 
 ```
 # You were on prod-db-1, now you're jumping to prod-web-2:
