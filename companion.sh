@@ -4,6 +4,7 @@
 # Requires: docker (with 'ssh-companion' container running), screen, claude CLI.
 
 [[ $# -eq 0 ]] && { echo "Usage: companion.sh ssh [-i key.pem] user@hostname"; exit 1; }
+command -v screen &>/dev/null || { echo "Error: 'screen' not found. Install it with: sudo apt install screen"; exit 1; }
 
 DEST=""
 for arg in "$@"; do
