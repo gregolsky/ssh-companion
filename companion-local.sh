@@ -6,8 +6,8 @@ SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 LOGFILE="$SESSIONS_DIR/local-$(date +%s).log"
 SESSION="companion-local"
 
-claude mcp list 2>/dev/null | grep -q "ssh-companion-mcp" || \
-  claude mcp add ssh-companion-mcp docker -- exec -i ssh-companion python /app/server.py
+claude mcp list 2>/dev/null | grep -q "ssh-companion" || \
+  claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
 
 mkdir -p "$SESSIONS_DIR"
 

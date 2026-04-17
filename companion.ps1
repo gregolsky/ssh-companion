@@ -7,8 +7,8 @@ $hostname = ($dest -split '@')[-1]
 if (-not $hostname) { Write-Error "Usage: companion.ps1 ssh [-i key.pem] user@hostname"; exit 1 }
 
 $mcpList = claude mcp list 2>$null
-if ($mcpList -notmatch "ssh-companion-mcp") {
-    claude mcp add ssh-companion-mcp docker -- exec -i ssh-companion python /app/server.py
+if ($mcpList -notmatch "ssh-companion") {
+    claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
 }
 
 $cmd = $args -join ' '

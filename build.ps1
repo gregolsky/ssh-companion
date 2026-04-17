@@ -1,5 +1,5 @@
 param(
-    [string]$Image = "ssh-companion-mcp",
+    [string]$Image = "ssh-companion",
     [string]$Tag = "latest"
 )
 

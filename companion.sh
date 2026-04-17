@@ -15,8 +15,8 @@ HOSTNAME="${HOSTNAME%%:*}"
 SESSION="companion-${HOSTNAME:-session}"
 SESSION="${SESSION//./-}"
 
-claude mcp list 2>/dev/null | grep -q "ssh-companion-mcp" || \
-  claude mcp add ssh-companion-mcp docker -- exec -i ssh-companion python /app/server.py
+claude mcp list 2>/dev/null | grep -q "ssh-companion" || \
+  claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
 
 screen -dmS "$SESSION" bash -c "docker exec -it ssh-companion $*; exec bash"
 screen -S "$SESSION" -X split -v

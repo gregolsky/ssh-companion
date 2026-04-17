@@ -1,4 +1,4 @@
-# ssh-companion-mcp
+# ssh-companion
 
 ![ssh-companion](icon.png)
 
@@ -39,7 +39,7 @@ Your terminal
 
 ```bash
 git clone <this-repo>
-cd ssh-companion-mcp
+cd ssh-companion
 ./start-mcp-server.sh
 ```
 
@@ -54,7 +54,7 @@ docker compose up -d
 The launch scripts (`companion.sh`, `companion-local.sh`) do this automatically. To register manually:
 
 ```bash
-claude mcp add ssh-companion-mcp docker -- exec -i ssh-companion python /app/server.py
+claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
 ```
 
 Or add to `.mcp.json` in your project root for automatic registration when Claude Code opens that directory:
@@ -62,7 +62,7 @@ Or add to `.mcp.json` in your project root for automatic registration when Claud
 ```json
 {
   "mcpServers": {
-    "ssh-companion-mcp": {
+    "ssh-companion": {
       "command": "docker",
       "args": ["exec", "-i", "ssh-companion", "python", "/app/server.py"]
     }

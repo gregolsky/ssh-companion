@@ -1,7 +1,7 @@
 #!/bin/bash
 # Starts the ssh-companion container. Builds the image first if needed.
 
-IMAGE="ssh-companion-mcp"
+IMAGE="ssh-companion"
 CONTAINER="ssh-companion"
 SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 

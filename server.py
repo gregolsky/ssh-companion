@@ -9,7 +9,7 @@ SESSIONS_DIR = Path("/sessions")
 TAIL_LINES = 200
 ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
-mcp = FastMCP("ssh-companion-mcp")
+mcp = FastMCP("ssh-companion")
 
 
 def strip_ansi(s: str) -> str:
