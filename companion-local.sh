@@ -1,43 +1,27 @@
 #!/bin/bash
-# Opens a tmux session with a captured local shell on the left and Claude on the right.
-# Uses an isolated tmux socket with prefix remapped to C-q so C-b passes
-# cleanly through to any remote tmux (no nested-tmux prefix clash).
-# Requires: tmux, claude CLI, script (util-linux).
+# Usage: ./companion-local.sh [--split|--windows]
+# Opens a captured local shell alongside Claude, either as a tmux side-by-side
+# split (default) or as two separate terminal windows.
+# Requires: claude CLI, script (util-linux), plus tmux (for --split) or a
+#           supported terminal emulator (for --windows).
 
-if ! command -v tmux &>/dev/null; then
-    if command -v apt-get &>/dev/null;   then INSTALL="sudo apt-get install tmux"
-    elif command -v dnf &>/dev/null;     then INSTALL="sudo dnf install tmux"
-    elif command -v brew &>/dev/null;    then INSTALL="brew install tmux"
-    else                                      INSTALL="<your package manager> install tmux"
-    fi
-    echo "Error: 'tmux' not found. Install it with: $INSTALL"; exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_companion-layout.sh"
+
+declare -a REMAINING
+parse_layout_args LAYOUT LAYOUT_EXPLICIT REMAINING "$@"
+set -- "${REMAINING[@]}"
 
 SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 LOGFILE="$SESSIONS_DIR/local-$(date +%s).log"
 SESSION="companion-local"
-SOCKET="ssh-companion"
-
-TMUX_CONF=$(mktemp --suffix=.tmux.conf)
-trap 'rm -f "$TMUX_CONF"' EXIT
-cat > "$TMUX_CONF" <<'EOF'
-unbind C-b
-set -g prefix C-q
-bind C-q send-prefix
-set -g mouse on
-EOF
 
 claude mcp list 2>/dev/null | grep -q "ssh-companion" || \
   claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
 
 mkdir -p "$SESSIONS_DIR"
 
-tmux -L "$SOCKET" -f "$TMUX_CONF" new-session -d -s "$SESSION" "script -q -f \"$LOGFILE\""
-tmux -L "$SOCKET" split-window -h -t "$SESSION" "claude"
-tmux -L "$SOCKET" select-pane -t "$SESSION":0.0
+LEFT_CMD="script -q -f \"$LOGFILE\""
+RIGHT_CMD="claude"
 
-if [ -n "$TMUX" ]; then
-    tmux -L "$SOCKET" switch-client -t "$SESSION"
-else
-    tmux -L "$SOCKET" attach -t "$SESSION"
-fi
+run_layout "$SESSION" "local shell" "$LEFT_CMD" "Claude" "$RIGHT_CMD"

@@ -113,6 +113,21 @@ Observe a local bash session — no SSH, no Docker for the capture side.
 
 Claude sees it as hostname `local`: `focus_session("local")`.
 
+### Layout options
+
+Both `companion.sh` and `companion-local.sh` accept:
+
+- `--split` (default) — tmux side-by-side pane (prefix remapped to `C-q`)
+- `--windows` — two separate terminal windows
+
+`--windows` auto-detects the terminal emulator (gnome-terminal, konsole, alacritty, kitty, wezterm, xfce4-terminal, xterm, or the Debian `x-terminal-emulator` alternative). Override with `COMPANION_TERMINAL_APP`:
+
+```bash
+COMPANION_TERMINAL_APP=alacritty ./companion.sh --windows ssh user@host
+```
+
+If tmux is missing and no layout is specified, the scripts fall back to `--windows` automatically. On Windows, `companion.ps1` supports `-Split` / `-Windows` switches.
+
 ### Manual SSH (if you prefer your own terminal layout)
 
 ```bash
