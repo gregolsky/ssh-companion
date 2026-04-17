@@ -11,20 +11,29 @@ An MCP server that lets Claude observe your SSH and local shell sessions in real
 
 A Docker container acts as the SSH chokepoint. Every session you open through the container is silently captured via `script` to a log file. Local sessions are captured the same way, directly on the host. The MCP server reads those logs and exposes them to Claude. Works with nested tmux on the remote, any shell, any terminal — capture happens at the raw byte stream level.
 
-```
-Your terminal
-    │
-    ├── SSH session (via Docker wrapper)
-    │       docker exec -it ssh-companion ssh user@prod-db-1
-    │       → /sessions/prod-db-1-<ts>.log
-    │
-    └── Local session (companion-local.sh)
-            script -q -f ~/.ssh-companion-sessions/local-<ts>.log
-            → ~/.ssh-companion-sessions/local-<ts>.log
-                         ▲
-    server.py  ← MCP server reads + strips ANSI
-                         ▲
-    Claude Code  →  docker exec -i ssh-companion python /app/server.py
+```mermaid
+flowchart LR
+    T(["Your terminal"])
+
+    subgraph docker ["Docker: ssh-companion"]
+        W["ssh-wrapper"]
+        R(["Remote server"])
+        W <-->|SSH| R
+    end
+
+    L[("~/.ssh-companion-sessions/*.log")]
+
+    subgraph srv ["MCP server"]
+        S["server.py\nstrips ANSI"]
+    end
+
+    CC(["Claude Code"])
+
+    T -->|"companion.sh"| W
+    W -->|"script -f"| L
+    T -->|"companion-local.sh"| L
+    L --> S
+    S -->|stdio| CC
 ```
 
 ## Prerequisites
