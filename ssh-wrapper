@@ -1,0 +1,12 @@
+#!/bin/bash
+DEST=""
+for arg in "$@"; do
+  [[ "$arg" =~ ^- ]] && continue
+  DEST="$arg"
+done
+HOSTNAME="${DEST##*@}"
+HOSTNAME="${HOSTNAME%%:*}"
+HOSTNAME="${HOSTNAME:-unknown}"
+
+LOGFILE="/sessions/${HOSTNAME}-$(date +%s).log"
+exec script -q -f "$LOGFILE" /usr/bin/ssh "$@"
