@@ -74,7 +74,13 @@ cd ssh-companion
 
 ### 2. Register the MCP server with Claude Code
 
-The launch scripts (`companion.sh`, `companion-local.sh`) do this automatically. To register manually:
+#### ✅ Automatic registration 
+
+The launch scripts (`companion.sh`, `companion-local.sh`) do this automatically. 
+
+#### 🪛 Manual approach 
+
+To register manually:
 
 ```bash
 claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
