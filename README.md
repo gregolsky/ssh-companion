@@ -44,18 +44,24 @@ flowchart LR
 
 ## Setup
 
-### 1. Build and start the container
+### 1. Start the container
+
+Pull the pre-built image from GitHub Container Registry and run it:
 
 ```bash
-git clone <this-repo>
-cd ssh-companion
-./start-mcp-server.sh
+docker run -d --name ssh-companion \
+  -v /tmp:/tmp \
+  -v ~/.ssh-companion-sessions:/sessions \
+  --restart unless-stopped \
+  ghcr.io/gregolsky/ssh-companion:latest
 ```
 
-`start-mcp-server.sh` builds the image if needed and starts the container. Or use Docker Compose:
+**Alternative — build from source:**
 
 ```bash
-docker compose up -d
+git clone https://github.com/gregolsky/ssh-companion.git
+cd ssh-companion
+./start-mcp-server.sh
 ```
 
 ### 2. Register the MCP server with Claude Code
