@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ssh-companion-mcp": {
+      "command": "docker",
+      "args": ["exec", "-i", "ssh-companion", "python", "/app/server.py"]
+    }
+  }
+}

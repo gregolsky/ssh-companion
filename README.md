@@ -9,7 +9,7 @@ A Docker container acts as the SSH chokepoint. Every session you open through th
 ```
 Your terminal
     │
-    │  docker exec -it peep ssh user@prod-db-1
+    │  docker exec -it ssh-companion ssh user@prod-db-1
     ▼
 Container (ssh-companion-mcp)
     /usr/local/bin/ssh  ← wrapper
@@ -19,7 +19,7 @@ Container (ssh-companion-mcp)
          ▲
     server.py  ← MCP server reads + strips ANSI
          ▲
-Claude Code  →  docker exec -i peep python /app/server.py
+Claude Code  →  docker exec -i ssh-companion python /app/server.py
 ```
 
 ## Prerequisites
@@ -41,18 +41,18 @@ docker build -t ssh-companion-mcp .
 ### 2. Start the container
 
 ```bash
-docker run -d --name peep \
+docker run -d --name ssh-companion \
   -v ~/.ssh:/root/.ssh:ro \
-  -v /tmp/peep-sessions:/sessions \
+  -v /tmp/ssh-companion-sessions:/sessions \
   ssh-companion-mcp
 ```
 
-The `~/.ssh` mount gives the container your SSH keys (read-only). Sessions are logged to `/tmp/peep-sessions/` on your host.
+The `~/.ssh` mount gives the container your SSH keys (read-only). Sessions are logged to `/tmp/ssh-companion-sessions/` on your host.
 
 ### 3. Register the MCP server with Claude Code
 
 ```bash
-claude mcp add ssh-companion-mcp docker -- exec -i peep python /app/server.py
+claude mcp add ssh-companion-mcp docker -- exec -i ssh-companion python /app/server.py
 ```
 
 Or add manually to `~/.claude/settings.json`:
@@ -62,7 +62,7 @@ Or add manually to `~/.claude/settings.json`:
   "mcpServers": {
     "ssh-companion-mcp": {
       "command": "docker",
-      "args": ["exec", "-i", "peep", "python", "/app/server.py"]
+      "args": ["exec", "-i", "ssh-companion", "python", "/app/server.py"]
     }
   }
 }
@@ -91,7 +91,7 @@ chmod +x companion.sh
 
 ```bash
 # Add this alias to ~/.bashrc or ~/.zshrc
-alias ssh='docker exec -it peep ssh'
+alias ssh='docker exec -it ssh-companion ssh'
 
 # Then use ssh normally — sessions are captured automatically
 ssh user@prod-db-1
@@ -142,10 +142,10 @@ ssh user@prod-web-2
 
 ```bash
 # Stop the container
-docker stop peep && docker rm peep
+docker stop ssh-companion && docker rm ssh-companion
 
 # Clear session logs (optional)
-rm -rf /tmp/peep-sessions
+rm -rf /tmp/ssh-companion-sessions
 ```
 
 ## Notes
