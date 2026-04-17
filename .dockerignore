@@ -1,0 +1,4 @@
+# Exclude everything, allow only what the image needs
+*
+!ssh-wrapper
+!server.py
