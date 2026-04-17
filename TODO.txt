@@ -1,1 +1,2 @@
 -allow to run companion with --instructions FILE
+-fix windows mode
