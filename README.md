@@ -7,7 +7,7 @@
 
 An MCP server that lets Claude observe your SSH and local shell sessions in real time and advise on support problems — performance issues, log analysis, error detection — without touching anything.
 
-## How it works
+## 🔍 How it works
 
 A Docker container acts as the SSH chokepoint. Every session you open through the container is silently captured via `script` to a log file. Local sessions are captured the same way, directly on the host. The MCP server reads those logs and exposes them to Claude. Works with nested tmux on the remote, any shell, any terminal — capture happens at the raw byte stream level.
 
@@ -36,13 +36,13 @@ flowchart LR
     S -->|stdio| CC
 ```
 
-## Prerequisites
+## 📋 Prerequisites
 
 - Docker
 - screen (Linux) or Windows Terminal / `wt` (Windows)
 - [Claude Code CLI](https://claude.ai/code)
 
-## Setup
+## 🚀 Setup
 
 ### 1. Start the container
 
@@ -85,7 +85,7 @@ Or add to `.mcp.json` in your project root for automatic registration when Claud
 }
 ```
 
-## Usage
+## 💻 Usage
 
 ### SSH session (Linux)
 
@@ -143,7 +143,7 @@ byte_offset each time. Alert me if you see errors, OOM messages, high load,
 or anything that looks like it needs attention.
 ```
 
-## MCP Tools
+## 🛠️ MCP Tools
 
 | Tool | Description |
 |------|-------------|
@@ -152,7 +152,7 @@ or anything that looks like it needs attention.
 | `read_session_since(hostname, byte_offset)` | Efficient poll — only new output since last read |
 | `search_session(hostname, pattern)` | Grep all logs for a hostname using a Python regex |
 
-## Multiple servers
+## 🖥️ Multiple servers
 
 Each server gets its own log file(s) under `~/.ssh-companion-sessions/<hostname>-<timestamp>.log`. Switching between servers just means telling Claude a different hostname — it reads the right log automatically.
 
@@ -164,7 +164,7 @@ ssh user@prod-web-2
 "I'm now on prod-web-2 — what do you see?"
 ```
 
-## Stopping / cleanup
+## 🧹 Stopping / cleanup
 
 ```bash
 # Stop the container
@@ -174,7 +174,7 @@ docker stop ssh-companion && docker rm ssh-companion
 rm -rf ~/.ssh-companion-sessions
 ```
 
-## Notes
+## 📝 Notes
 
 - **Read-only**: Claude can only observe. No commands are sent to any session.
 - **Nested tmux**: works fine. The capture is at the SSH byte stream level, so what remote tmux renders is captured as-is and ANSI-stripped for Claude.
