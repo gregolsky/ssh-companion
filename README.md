@@ -39,7 +39,7 @@ flowchart LR
 ## 📋 Prerequisites
 
 - Docker
-- screen (Linux) or Windows Terminal / `wt` (Windows)
+- tmux (Linux) or Windows Terminal / `wt` (Windows)
 - [Claude Code CLI](https://claude.ai/code)
 
 ## 🚀 Setup
@@ -178,5 +178,5 @@ rm -rf ~/.ssh-companion-sessions
 
 - **Read-only**: Claude can only observe. No commands are sent to any session.
 - **Nested tmux**: works fine. The capture is at the SSH byte stream level, so what remote tmux renders is captured as-is and ANSI-stripped for Claude.
-- **No prefix clash**: `companion.sh` uses GNU `screen` locally (prefix `C-a`), so `C-b` passes cleanly through to your remote tmux session.
+- **No prefix clash**: `companion.sh` runs tmux on a dedicated socket with the prefix remapped to `C-q`, so `C-b` passes cleanly through to your remote tmux session. Use `C-q` as the local prefix (e.g. `C-q d` to detach, `C-q o` to switch panes).
 - **SSH keys**: the `/tmp:/tmp` mount means any key at `/tmp/temp-key` on the host is visible inside the container at the same path — use `ssh -i /tmp/temp-key` as normal. SSH agent forwarding (`-A`) is also supported.
