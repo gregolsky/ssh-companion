@@ -60,8 +60,8 @@ parse_layout_args() {
     for arg in "$@"; do
         case "$arg" in
             --layout=*) _layout="${arg#--layout=}"; _explicit=1 ;;
-            --split)    _layout=split;   _explicit=1 ;;
-            --windows)  _layout=windows; _explicit=1 ;;
+            --split)    _layout="split";   _explicit=1 ;;
+            --windows)  _layout="windows"; _explicit=1 ;;
             *)          _rest+=("$arg") ;;
         esac
     done

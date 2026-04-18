@@ -30,3 +30,16 @@ jobs:
             bash -n "$f"
             echo "::endgroup::"
           done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: shellcheck on shell scripts
+        run: |
+          set -e
+          shopt -s nullglob
+          files=( *.sh ssh-wrapper )
+          echo "Checking: ${files[*]}"
+          shellcheck "${files[@]}"
