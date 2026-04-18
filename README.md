@@ -58,13 +58,21 @@ Pull the pre-built image from GitHub Container Registry and run it:
 
 ```bash
 docker run -d --name ssh-companion \
-  -v ~/.ssh:/root/.ssh:ro \
+  -v ~/.ssh:/home/companion/.ssh \
   -v ~/.ssh-companion-sessions:/sessions \
   --restart unless-stopped \
   ghcr.io/gregolsky/ssh-companion:latest
 ```
 
-**About the key mount:** `ssh` runs *inside* the container, so it can only read keys that are visible inside the container. The `-v ~/.ssh:/root/.ssh:ro` line above mounts your host SSH directory read-only — your usual keys (`id_ed25519`, `id_rsa`, etc.) and `known_hosts` are picked up as normal, with no setup beyond the docker run.
+**About the key mount:** `ssh` runs *inside* the container as a non-root `companion` user, so it can only read keys that are visible inside the container. The `-v ~/.ssh:/home/companion/.ssh` line above mounts your host SSH directory at the companion user's home — your usual keys (`id_ed25519`, `id_rsa`, etc.) and `known_hosts` are picked up as normal, and new hosts can be written back to `known_hosts`. Add `:ro` to the mount if you want to keep it read-only (note: this breaks first-time host-key acceptance).
+
+**UID caveat:** the prebuilt image pins `companion` to UID/GID 1000, which matches most single-user Linux desktops. If `id -u` on your host isn't 1000, the container won't be able to read your keys or write session logs — build from source instead:
+
+```bash
+git clone https://github.com/gregolsky/ssh-companion.git
+cd ssh-companion
+./build.sh        # picks up your host UID/GID automatically
+```
 
 If your keys live elsewhere, mount that directory instead (or in addition). Examples:
 
@@ -73,7 +81,7 @@ If your keys live elsewhere, mount that directory instead (or in addition). Exam
 -v /tmp:/tmp
 
 # Project-local keys under ~/work/keys:
--v ~/work/keys:/root/keys:ro        # then: ssh -i /root/keys/<name> user@host
+-v ~/work/keys:/home/companion/keys:ro     # then: ssh -i /home/companion/keys/<name> user@host
 ```
 
 Prefer not to mount keys at all? Start your SSH agent on the host, forward it with `-A` (`./companion.sh ssh -A user@host`), and the container uses your agent over the forwarded socket.
@@ -126,7 +134,7 @@ Opens the SSH session on the left and Claude on the right, side by side.
 
 # Specific key — the path is resolved inside the container, so the
 # directory must be mounted (see "About the key mount" above):
-./companion.sh ssh -i /root/.ssh/work_key ubuntu@prod-db-1
+./companion.sh ssh -i /home/companion/.ssh/work_key ubuntu@prod-db-1
 
 # Agent forwarding — no key mount needed:
 ./companion.sh ssh -A ubuntu@prod-db-1
@@ -241,4 +249,4 @@ rm -rf ~/.ssh-companion-sessions
 - **Read-only**: Claude can only observe. No commands are sent to any session.
 - **Nested tmux**: works fine. The capture is at the SSH byte stream level, so what remote tmux renders is captured as-is and ANSI-stripped for Claude.
 - **No prefix clash**: `companion.sh` runs tmux on a dedicated socket with the prefix remapped to `C-q`, so `C-b` passes cleanly through to your remote tmux session. Use `C-q` as the local prefix (e.g. `C-q d` to detach, `C-q o` to switch panes).
-- **SSH keys**: `ssh` runs inside the container, so it can only read keys mounted into the container (default: `-v ~/.ssh:/root/.ssh:ro`). Agent forwarding (`-A`) works too — see the Setup section for details.
+- **SSH keys**: `ssh` runs inside the container as a non-root `companion` user, so it can only read keys mounted into the container (default: `-v ~/.ssh:/home/companion/.ssh`). Agent forwarding (`-A`) works too — see the Setup section for details, including the UID caveat.

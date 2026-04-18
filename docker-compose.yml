@@ -1,8 +1,12 @@
 services:
   ssh-companion:
-    build: .
+    build:
+      context: .
+      args:
+        COMPANION_UID: "${COMPANION_UID:-1000}"
+        COMPANION_GID: "${COMPANION_GID:-1000}"
     container_name: ssh-companion
     volumes:
-      - "/tmp:/tmp"
+      - "${SSH_COMPANION_SSH_DIR:-$HOME/.ssh}:/home/companion/.ssh"
       - "${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}:/sessions"
     restart: unless-stopped
