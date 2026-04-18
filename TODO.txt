@@ -1,2 +1,2 @@
--allow to run companion with --instructions FILE
+-allow --instructions-loop to accept a file path (e.g. @file) for longer prompts
 -fix windows mode

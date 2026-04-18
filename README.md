@@ -172,6 +172,17 @@ byte_offset each time. Alert me if you see errors, OOM messages, high load,
 or anything that looks like it needs attention.
 ```
 
+**Pre-seed the loop at launch** — instead of typing `/loop …` after Claude opens, pass the prompt via `--instructions-loop`:
+
+```bash
+./companion.sh --instructions-loop "Watch prod-db-1 every 30 seconds. \
+Call read_session_since with the last byte_offset each time. \
+Alert me if you see errors, OOM messages, or high load." \
+ssh ubuntu@prod-db-1
+```
+
+Works the same with `companion-local.sh`, and with `-InstructionsLoop` on `companion.ps1`. Flags must come before the `ssh` subcommand.
+
 ## 🛠️ MCP Tools
 
 | Tool | Description |

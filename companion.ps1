@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Usage: .\companion.ps1 [-Layout split|windows] [-Split] [-Windows] ssh [-i key.pem] user@hostname [ssh-options...]
+# Usage: .\companion.ps1 [-Layout split|windows] [-Split] [-Windows] [-InstructionsLoop "<prompt>"] ssh [-i key.pem] user@hostname [ssh-options...]
 # Opens SSH alongside Claude in Windows Terminal, either as a split pane
 # (default) or as two separate windows.
+# -InstructionsLoop pre-seeds Claude with `/loop <prompt>` so the watch
+# loop starts on launch instead of being typed by hand.
 # Requires: Docker Desktop, Windows Terminal (wt), claude CLI.
 
 param(
     [string]$Layout = "split",
     [switch]$Split,
     [switch]$Windows,
+    [string]$InstructionsLoop = "",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemArgs
 )
@@ -33,7 +36,7 @@ if ($Layout -notin @("split","windows")) {
 
 $dest = $RemArgs | Where-Object { $_ -notmatch '^-' -and $_ -ne 'ssh' } | Select-Object -Last 1
 $hostname = ($dest -split '@')[-1]
-if (-not $hostname) { Write-Error "Usage: companion.ps1 [-Split|-Windows] ssh [-i key.pem] user@hostname"; exit 1 }
+if (-not $hostname) { Write-Error "Usage: companion.ps1 [-Split|-Windows] [-InstructionsLoop `"<prompt>`"] ssh [-i key.pem] user@hostname"; exit 1 }
 
 $mcpList = claude mcp list 2>$null
 if ($mcpList -notmatch "ssh-companion") {
@@ -42,9 +45,16 @@ if ($mcpList -notmatch "ssh-companion") {
 
 $cmd = $RemArgs -join ' '
 
+if ($InstructionsLoop) {
+    $escaped = $InstructionsLoop -replace "'", "''"
+    $claudeCmd = "claude '/loop $escaped'"
+} else {
+    $claudeCmd = "claude"
+}
+
 if ($Layout -eq "split") {
-    wt new-tab --title "SSH: $hostname" -- docker exec -it ssh-companion $cmd `; split-pane --vertical --title "Claude" -- powershell -NoExit -Command "claude"
+    wt new-tab --title "SSH: $hostname" -- docker exec -it ssh-companion $cmd `; split-pane --vertical --title "Claude" -- powershell -NoExit -Command $claudeCmd
 } else {
     wt -w -1 new-window --title "SSH: $hostname" -- docker exec -it ssh-companion $cmd
-    wt -w -1 new-window --title "Claude" -- powershell -NoExit -Command "claude"
+    wt -w -1 new-window --title "Claude" -- powershell -NoExit -Command $claudeCmd
 }
