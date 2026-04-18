@@ -19,34 +19,5 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build image
-        run: docker build -t ssh-companion:ci .
-
-      - name: Start container
-        run: docker run -d --name ssh-companion-ci ssh-companion:ci
-
-      - name: Runs as non-root companion user
-        run: |
-          user=$(docker exec ssh-companion-ci whoami)
-          uid=$(docker exec ssh-companion-ci id -u)
-          echo "user=$user uid=$uid"
-          [ "$user" = "companion" ]
-          [ "$uid" != "0" ]
-
-      - name: ssh wrapper installed at /usr/local/bin/ssh
-        run: |
-          docker exec ssh-companion-ci grep -q '/sessions/' /usr/local/bin/ssh
-
-      - name: /sessions is writable by runtime user
-        run: |
-          docker exec ssh-companion-ci sh -c 'touch /sessions/.probe && rm /sessions/.probe'
-
-      - name: MCP server imports cleanly
-        run: |
-          name=$(docker exec ssh-companion-ci python -c 'import sys; sys.path.insert(0, "/app"); import server; print(server.mcp.name)')
-          echo "mcp.name=$name"
-          [ "$name" = "ssh-companion" ]
-
-      - name: Stop container
-        if: always()
-        run: docker rm -f ssh-companion-ci
+      - name: Run smoke test
+        run: bash test/smoke-test.sh
