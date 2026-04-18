@@ -58,11 +58,25 @@ Pull the pre-built image from GitHub Container Registry and run it:
 
 ```bash
 docker run -d --name ssh-companion \
-  -v /tmp:/tmp \
+  -v ~/.ssh:/root/.ssh:ro \
   -v ~/.ssh-companion-sessions:/sessions \
   --restart unless-stopped \
   ghcr.io/gregolsky/ssh-companion:latest
 ```
+
+**About the key mount:** `ssh` runs *inside* the container, so it can only read keys that are visible inside the container. The `-v ~/.ssh:/root/.ssh:ro` line above mounts your host SSH directory read-only — your usual keys (`id_ed25519`, `id_rsa`, etc.) and `known_hosts` are picked up as normal, with no setup beyond the docker run.
+
+If your keys live elsewhere, mount that directory instead (or in addition). Examples:
+
+```bash
+# Throwaway key at /tmp/temp-key on the host:
+-v /tmp:/tmp
+
+# Project-local keys under ~/work/keys:
+-v ~/work/keys:/root/keys:ro        # then: ssh -i /root/keys/<name> user@host
+```
+
+Prefer not to mount keys at all? Start your SSH agent on the host, forward it with `-A` (`./companion.sh ssh -A user@host`), and the container uses your agent over the forwarded socket.
 
 **Alternative — build from source:**
 
@@ -106,8 +120,16 @@ Or add to `.mcp.json` in your project root for automatic registration when Claud
 Opens the SSH session on the left and Claude on the right, side by side.
 
 ```bash
+# Default keys from ~/.ssh (works out of the box if you used the mount
+# from the Setup step above):
 ./companion.sh ssh ubuntu@prod-db-1
-./companion.sh ssh -i /tmp/temp-key ubuntu@prod-db-1
+
+# Specific key — the path is resolved inside the container, so the
+# directory must be mounted (see "About the key mount" above):
+./companion.sh ssh -i /root/.ssh/work_key ubuntu@prod-db-1
+
+# Agent forwarding — no key mount needed:
+./companion.sh ssh -A ubuntu@prod-db-1
 ```
 
 ### SSH session (Windows)
@@ -219,4 +241,4 @@ rm -rf ~/.ssh-companion-sessions
 - **Read-only**: Claude can only observe. No commands are sent to any session.
 - **Nested tmux**: works fine. The capture is at the SSH byte stream level, so what remote tmux renders is captured as-is and ANSI-stripped for Claude.
 - **No prefix clash**: `companion.sh` runs tmux on a dedicated socket with the prefix remapped to `C-q`, so `C-b` passes cleanly through to your remote tmux session. Use `C-q` as the local prefix (e.g. `C-q d` to detach, `C-q o` to switch panes).
-- **SSH keys**: the `/tmp:/tmp` mount means any key at `/tmp/temp-key` on the host is visible inside the container at the same path — use `ssh -i /tmp/temp-key` as normal. SSH agent forwarding (`-A`) is also supported.
+- **SSH keys**: `ssh` runs inside the container, so it can only read keys mounted into the container (default: `-v ~/.ssh:/root/.ssh:ro`). Agent forwarding (`-A`) works too — see the Setup section for details.
