@@ -1,0 +1,32 @@
+# Copyright 2026 Grzegorz Lachowski
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  bash-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: bash -n on shell scripts
+        run: |
+          set -e
+          shopt -s nullglob
+          files=( *.sh ssh-wrapper )
+          echo "Checking: ${files[*]}"
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            bash -n "$f"
+            echo "::endgroup::"
+          done
