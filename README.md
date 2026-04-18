@@ -234,6 +234,22 @@ ssh user@prod-web-2
 "I'm now on prod-web-2 — what do you see?"
 ```
 
+## 🛡️ Threat model
+
+### What ssh-companion defends against
+
+- **Container escape / privilege escalation inside the container.** The container runs as a non-root `companion` user with `--cap-drop=ALL` and `--security-opt=no-new-privileges`. A compromised process can't use Linux capabilities or setuid binaries to elevate.
+- **Stale upstream CVEs.** CI runs Trivy on every PR and weekly to flag fixable HIGH/CRITICAL findings in the base image, and Dependabot nudges updates for the Dockerfile base image and GitHub Actions.
+- **Tampering with the MCP server or ssh wrapper binaries.** The container is built from source on every release — there's no writable persistence layer that survives a rebuild.
+
+### What's out of scope
+
+- **Host trust.** ssh-companion assumes the host is trusted. `~/.ssh` is bind-mounted into the container (read-write by default so `known_hosts` updates work), so a compromised container still has access to your keys. If that's not acceptable, add `:ro` to the mount and accept the TOFU-verification friction.
+- **The SSH target itself.** Whatever the user types in the session hits the remote as-is. The tool observes; it does not filter, rate-limit, or sanitize.
+- **Session log confidentiality.** Logs capture the raw session byte stream, including anything typed into interactive prompts (passwords, tokens, sudo inputs). They live at `~/.ssh-companion-sessions/` with host filesystem permissions — anyone with read access to that directory can replay them.
+- **MCP access control.** Any process on the host that can `docker exec` into the container can invoke the MCP tools and read every captured session. Claude's tool access is not sandboxed beyond that.
+- **Supply chain of `mcp[cli]` and base image.** Trivy scans known CVEs, but zero-days and compromised upstream packages are not detected.
+
 ## 🧹 Stopping / cleanup
 
 ```bash
