@@ -1,0 +1,52 @@
+# Copyright 2026 Grzegorz Lachowski
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+name: Smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t ssh-companion:ci .
+
+      - name: Start container
+        run: docker run -d --name ssh-companion-ci ssh-companion:ci
+
+      - name: Runs as non-root companion user
+        run: |
+          user=$(docker exec ssh-companion-ci whoami)
+          uid=$(docker exec ssh-companion-ci id -u)
+          echo "user=$user uid=$uid"
+          [ "$user" = "companion" ]
+          [ "$uid" != "0" ]
+
+      - name: ssh wrapper installed at /usr/local/bin/ssh
+        run: |
+          docker exec ssh-companion-ci grep -q '/sessions/' /usr/local/bin/ssh
+
+      - name: /sessions is writable by runtime user
+        run: |
+          docker exec ssh-companion-ci sh -c 'touch /sessions/.probe && rm /sessions/.probe'
+
+      - name: MCP server imports cleanly
+        run: |
+          name=$(docker exec ssh-companion-ci python -c 'import sys; sys.path.insert(0, "/app"); import server; print(server.mcp.name)')
+          echo "mcp.name=$name"
+          [ "$name" = "ssh-companion" ]
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f ssh-companion-ci
