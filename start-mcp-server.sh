@@ -18,10 +18,14 @@
 IMAGE="ssh-companion"
 CONTAINER="ssh-companion"
 SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
+SSH_DIR="${SSH_COMPANION_SSH_DIR:-$HOME/.ssh}"
 
 if ! docker image inspect "$IMAGE" &>/dev/null; then
-    echo "Building $IMAGE..."
-    docker build -t "$IMAGE" "$(dirname "$0")"
+    echo "Building $IMAGE (uid=$(id -u) gid=$(id -g))..."
+    docker build \
+        --build-arg "COMPANION_UID=$(id -u)" \
+        --build-arg "COMPANION_GID=$(id -g)" \
+        -t "$IMAGE" "$(dirname "$0")"
 fi
 
 if docker container inspect "$CONTAINER" &>/dev/null; then
@@ -32,7 +36,7 @@ fi
 mkdir -p "$SESSIONS_DIR"
 
 docker run -d --name "$CONTAINER" \
-    -v /tmp:/tmp \
+    -v "$SSH_DIR:/home/companion/.ssh" \
     -v "$SESSIONS_DIR:/sessions" \
     "$IMAGE"
 

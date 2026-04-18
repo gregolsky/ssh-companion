@@ -17,7 +17,12 @@ set -euo pipefail
 
 IMAGE="${IMAGE:-ssh-companion}"
 TAG="${TAG:-latest}"
+COMPANION_UID="${COMPANION_UID:-$(id -u)}"
+COMPANION_GID="${COMPANION_GID:-$(id -g)}"
 
-echo "Building $IMAGE:$TAG..."
-docker build -t "$IMAGE:$TAG" .
+echo "Building $IMAGE:$TAG (uid=$COMPANION_UID gid=$COMPANION_GID)..."
+docker build \
+    --build-arg "COMPANION_UID=$COMPANION_UID" \
+    --build-arg "COMPANION_GID=$COMPANION_GID" \
+    -t "$IMAGE:$TAG" .
 echo "Done: $IMAGE:$TAG"

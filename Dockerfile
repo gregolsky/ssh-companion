@@ -20,11 +20,24 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir "mcp[cli]>=1.0"
 
+# Non-root user. UID/GID default to 1000 (matches most single-user Linux
+# desktops). Override at build time (`--build-arg COMPANION_UID=$(id -u)
+# --build-arg COMPANION_GID=$(id -g)`) if your host UID differs — the
+# bind-mounted ~/.ssh and sessions dir keep their host ownership, so
+# the container user must match to read keys and write session logs.
+ARG COMPANION_UID=1000
+ARG COMPANION_GID=1000
+RUN groupadd --gid "${COMPANION_GID}" companion \
+    && useradd --create-home --uid "${COMPANION_UID}" --gid "${COMPANION_GID}" companion
+
 COPY ssh-wrapper /usr/local/bin/ssh
 RUN chmod +x /usr/local/bin/ssh
 
 COPY server.py /app/server.py
 
+RUN mkdir -p /sessions && chown companion:companion /sessions
+
+USER companion
 VOLUME /sessions
 
 CMD ["sleep", "infinity"]
