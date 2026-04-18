@@ -36,6 +36,8 @@ fi
 mkdir -p "$SESSIONS_DIR"
 
 docker run -d --name "$CONTAINER" \
+    --cap-drop=ALL \
+    --security-opt=no-new-privileges \
     -v "$SSH_DIR:/home/companion/.ssh" \
     -v "$SESSIONS_DIR:/sessions" \
     "$IMAGE"

@@ -6,6 +6,10 @@ services:
         COMPANION_UID: "${COMPANION_UID:-1000}"
         COMPANION_GID: "${COMPANION_GID:-1000}"
     container_name: ssh-companion
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - "${SSH_COMPANION_SSH_DIR:-$HOME/.ssh}:/home/companion/.ssh"
       - "${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}:/sessions"
