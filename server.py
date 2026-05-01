@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,8 @@ from mcp.server.fastmcp import FastMCP
 SESSIONS_DIR = Path("/sessions")
 TAIL_LINES = 200
 ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+DEFAULT_HOSTNAME = ""
 
 mcp = FastMCP("ssh-companion")
 
@@ -53,13 +56,15 @@ def _ts_to_iso(ts: float) -> str:
 
 @mcp.tool()
 def list_sessions() -> list[dict]:
-    """List all captured SSH sessions grouped by hostname."""
+    """List captured SSH sessions. When the server is started with --hostname it lists only that host's sessions."""
     if not SESSIONS_DIR.exists():
         return []
 
     groups: dict[str, list[Path]] = {}
     for log in SESSIONS_DIR.glob("*.log"):
         host = _hostname_from_path(log)
+        if DEFAULT_HOSTNAME and host != DEFAULT_HOSTNAME:
+            continue
         groups.setdefault(host, []).append(log)
 
     result = []
@@ -76,12 +81,16 @@ def list_sessions() -> list[dict]:
 
 
 @mcp.tool()
-def focus_session(hostname: str, lines: int = TAIL_LINES) -> dict:
+def focus_session(hostname: str = "", lines: int = TAIL_LINES) -> dict:
     """
     Read the most recent session log for a hostname.
     Returns the last N lines of clean (ANSI-stripped) output plus a byte_offset
     you can pass to read_session_since for efficient polling.
+    Hostname defaults to the server's --hostname value when not provided.
     """
+    hostname = hostname or DEFAULT_HOSTNAME
+    if not hostname:
+        return {"error": "hostname is required"}
     log = _latest_log(hostname)
     if log is None:
         return {"error": f"No session logs found for hostname '{hostname}'"}
@@ -105,11 +114,15 @@ def focus_session(hostname: str, lines: int = TAIL_LINES) -> dict:
 
 
 @mcp.tool()
-def read_session_since(hostname: str, byte_offset: int, lines: int = TAIL_LINES) -> dict:
+def read_session_since(byte_offset: int, hostname: str = "", lines: int = TAIL_LINES) -> dict:
     """
     Return only new output since the last read (pass byte_offset from focus_session
     or a previous read_session_since call). Use this for polling / /loop watch mode.
+    Hostname defaults to the server's --hostname value when not provided.
     """
+    hostname = hostname or DEFAULT_HOSTNAME
+    if not hostname:
+        return {"error": "hostname is required"}
     log = _latest_log(hostname)
     if log is None:
         return {"error": f"No session logs found for hostname '{hostname}'"}
@@ -146,11 +159,15 @@ def read_session_since(hostname: str, byte_offset: int, lines: int = TAIL_LINES)
 
 
 @mcp.tool()
-def search_session(hostname: str, pattern: str, max_matches: int = 50) -> dict:
+def search_session(pattern: str, hostname: str = "", max_matches: int = 50) -> dict:
     """
     Search all session logs for a hostname using a Python regex pattern.
     Useful for finding errors, specific commands, or events across the full history.
+    Hostname defaults to the server's --hostname value when not provided.
     """
+    hostname = hostname or DEFAULT_HOSTNAME
+    if not hostname:
+        return {"error": "hostname is required"}
     try:
         rx = re.compile(pattern, re.IGNORECASE)
     except re.error as e:
@@ -189,4 +206,8 @@ def search_session(hostname: str, pattern: str, max_matches: int = 50) -> dict:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hostname", default="", help="Restrict this MCP instance to one SSH host")
+    args = parser.parse_args()
+    DEFAULT_HOSTNAME = args.hostname
     mcp.run(transport="stdio")

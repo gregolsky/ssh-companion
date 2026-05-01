@@ -94,32 +94,20 @@ cd ssh-companion
 ./start-mcp-server.sh
 ```
 
-### 2. Register the MCP server with Claude Code
+### 2. MCP server registration
 
-#### ✅ Automatic registration 
+The launch scripts manage this automatically. Each time you run `companion.sh` or `companion-local.sh` a uniquely-named entry is added to the project-local `.mcp.json`:
 
-The launch scripts (`companion.sh`, `companion-local.sh`) do this automatically. 
-
-#### 🪛 Manual approach 
-
-To register manually:
-
-```bash
-claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
+```
+ssh-companion-prod-db-1-12345   →  scoped to prod-db-1
+ssh-companion-staging-67890     →  scoped to staging
 ```
 
-Or add to `.mcp.json` in your project root for automatic registration when Claude Code opens that directory:
+The entry is removed automatically when you close the session (tmux pane or terminal window). Stale entries left behind by `kill -9` or power loss are pruned the next time a companion script runs.
 
-```json
-{
-  "mcpServers": {
-    "ssh-companion": {
-      "command": "docker",
-      "args": ["exec", "-i", "ssh-companion", "python", "/app/server.py"]
-    }
-  }
-}
-```
+Because `.mcp.json` is runtime-managed it is gitignored. You should open Claude Code **from within the `ssh-companion` directory** (or a directory that contains its `.mcp.json`) so the project-scoped file is loaded. If you open Claude separately before launching a companion script it will not see the MCP entry.
+
+Each MCP instance is scoped to one SSH host, so Claude's tools (`focus_session`, `read_session_since`, `search_session`) work without specifying a hostname — they automatically target the right server. When working with multiple servers at once, Claude can call tools on different instances simultaneously.
 
 ## 💻 Usage
 
@@ -155,7 +143,7 @@ Observe a local bash session — no SSH, no Docker for the capture side.
 ./companion-local.sh
 ```
 
-Claude sees it as hostname `local`: `focus_session("local")`.
+Claude sees it as hostname `local`. The MCP server still runs inside the `ssh-companion` container, so the container must be running before launching `companion-local.sh`. The script will start it automatically if it isn't already running.
 
 ### Layout options
 
@@ -252,7 +240,15 @@ ssh user@prod-web-2
 
 ## 🧹 Stopping / cleanup
 
+Session MCP entries are removed automatically when you close the companion window. Entries from abruptly terminated sessions are pruned the next time any companion script runs.
+
+To recover manually (e.g. after a system restart with stale entries):
+
 ```bash
+# Remove all ssh-companion-* entries from .mcp.json
+jq 'del(.mcpServers | with_entries(select(.key | startswith("ssh-companion-"))))' \
+    .mcp.json > /tmp/mcp.json && mv /tmp/mcp.json .mcp.json
+
 # Stop the container
 docker stop ssh-companion && docker rm ssh-companion
 

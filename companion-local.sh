@@ -22,7 +22,9 @@
 #           supported terminal emulator (for --windows).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_FILE="$SCRIPT_DIR/.mcp.json"
 source "$SCRIPT_DIR/_companion-layout.sh"
+source "$SCRIPT_DIR/_mcp-entry.sh"
 
 INSTRUCTIONS_LOOP=""
 declare -a PRE_LAYOUT_ARGS
@@ -47,8 +49,14 @@ SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 LOGFILE="$SESSIONS_DIR/local-$(date +%s).log"
 SESSION="companion-local"
 
-claude mcp list 2>/dev/null | grep -q "ssh-companion" || \
-  claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
+if ! docker inspect ssh-companion >/dev/null 2>&1; then
+    echo "Starting ssh-companion container..."
+    "$SCRIPT_DIR/start-mcp-server.sh"
+fi
+
+mcp_prune_stale "$MCP_FILE"
+MCP_NAME="ssh-companion-local-$$"
+mcp_add "$MCP_FILE" "$MCP_NAME" "local"
 
 mkdir -p "$SESSIONS_DIR"
 
@@ -60,3 +68,7 @@ else
 fi
 
 run_layout "$SESSION" "local shell" "$LEFT_CMD" "Claude" "$RIGHT_CMD"
+
+if [[ "$LAYOUT" == "split" ]]; then
+    mcp_remove "$MCP_FILE" "$MCP_NAME"
+fi

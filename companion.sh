@@ -22,7 +22,9 @@
 #           plus tmux (for --split) or a supported terminal emulator (for --windows).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_FILE="$SCRIPT_DIR/.mcp.json"
 source "$SCRIPT_DIR/_companion-layout.sh"
+source "$SCRIPT_DIR/_mcp-entry.sh"
 
 INSTRUCTIONS_LOOP=""
 declare -a PRE_LAYOUT_ARGS
@@ -55,8 +57,10 @@ HOSTNAME="${HOSTNAME%%:*}"
 SESSION="companion-${HOSTNAME:-session}"
 SESSION="${SESSION//./-}"
 
-claude mcp list 2>/dev/null | grep -q "ssh-companion" || \
-  claude mcp add ssh-companion docker -- exec -i ssh-companion python /app/server.py
+mcp_prune_stale "$MCP_FILE"
+MCP_SUFFIX=$(mcp_compute_suffix "$HOSTNAME")
+MCP_NAME="ssh-companion-$MCP_SUFFIX"
+mcp_add "$MCP_FILE" "$MCP_NAME" "$HOSTNAME"
 
 LEFT_CMD="docker exec -it ssh-companion $*"
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
@@ -66,3 +70,9 @@ else
 fi
 
 run_layout "$SESSION" "SSH: ${HOSTNAME:-session}" "$LEFT_CMD" "Claude" "$RIGHT_CMD"
+
+# In split mode run_layout blocks (tmux attach) — clean up after it returns.
+# In windows mode it returns immediately; stale entries are pruned on the next launch.
+if [[ "$LAYOUT" == "split" ]]; then
+    mcp_remove "$MCP_FILE" "$MCP_NAME"
+fi

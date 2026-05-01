@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 *.pyo
+.mcp.json
+.mcp.json.lock
