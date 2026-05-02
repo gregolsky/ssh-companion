@@ -180,17 +180,18 @@ What's happening on prod-db-1?
 
 Claude will call `focus_session("prod-db-1")` and read the last 200 lines of your session.
 
-### Active watch mode (`/loop`)
+### Active watch mode (default)
 
-To have Claude monitor a session and alert you proactively:
+By default, every `companion.sh` and `companion-local.sh` launch boots Claude into a `/loop` that watches the session every ~60s and advises on what the user is doing — errors, non-zero exits, OOM messages, high load, stack traces.
 
+To disable it:
+
+```bash
+./companion.sh --no-watch ssh ubuntu@prod-db-1
+./companion-local.sh --no-watch
 ```
-/loop Watch prod-db-1 every 30 seconds. Call read_session_since with the last
-byte_offset each time. Alert me if you see errors, OOM messages, high load,
-or anything that looks like it needs attention.
-```
 
-**Pre-seed the loop at launch** — instead of typing `/loop …` after Claude opens, pass the prompt via `--instructions-loop`:
+To override the default watcher with a custom prompt, use `--instructions-loop`:
 
 ```bash
 ./companion.sh --instructions-loop "Watch prod-db-1 every 30 seconds. \
@@ -199,7 +200,11 @@ Alert me if you see errors, OOM messages, or high load." \
 ssh ubuntu@prod-db-1
 ```
 
-Works the same with `companion-local.sh`, and with `-InstructionsLoop` on `companion.ps1`. Flags must come before the `ssh` subcommand.
+Works the same with `companion-local.sh`. Flags must come before the `ssh` subcommand.
+
+### Performance checklist (`/ssh-perf`)
+
+Type `/ssh-perf` in the Claude pane to start a guided walkthrough of Brendan Gregg's 60-second Linux performance checklist. Claude presents each command for you to paste in the left pane, reads the output via `read_session_since`, interprets the key fields (CPU saturation, I/O wait, swap pressure, TCP errors), and tracks a progress checklist across the session. After all 10 steps it summarizes the top bottlenecks and suggests follow-up commands.
 
 ## 🛠️ MCP Tools
 

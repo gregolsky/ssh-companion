@@ -1,0 +1,1 @@
+Use the ssh-perf skill to walk me through Brendan Gregg's 60-second Linux performance checklist on the active session. Present each command for me to run in the left pane, read the output via read_session_since, interpret the key fields, and track progress with a checklist. Start with step 1 now.

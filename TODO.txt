@@ -1,5 +1,4 @@
 -allow --instructions-loop to accept a file path (e.g. @file) for longer prompts
 -fix windows mode
 -extend test/smoke-test.sh: drive companion.sh non-interactively, assert .mcp.json entry is added, MCP server is callable via docker exec, prune cleans up the entry
--session watcher: companion auto-watches the session every 60s and advises on what the user is doing (background /loop)
--performance skill: advise on finding performance bottlenecks starting with Brendan Gregg's 60-second Linux performance checklist (present commands for user to run, track what has been done and findings)
+-add test run to gh actions (tests.yml + smoke-test.yml already exist; clarify what's missing — coverage? matrix? Windows runner?)

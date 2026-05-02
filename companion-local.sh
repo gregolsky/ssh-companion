@@ -13,11 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Usage: ./companion-local.sh [--split|--windows] [--instructions-loop "<prompt>"]
+# Usage: ./companion-local.sh [--split|--windows] [--no-watch] [--instructions-loop "<prompt>"]
 # Opens a captured local shell alongside Claude, either as a tmux side-by-side
 # split (default) or as two separate terminal windows.
-# --instructions-loop pre-seeds Claude with `/loop <prompt>` so the watch
-# loop starts on launch instead of being typed by hand.
+# By default Claude starts a /loop that watches the session every ~60s and
+# advises on what is happening. Pass --no-watch to open Claude without the loop,
+# or --instructions-loop "<prompt>" to override the default watcher with a
+# custom prompt.
 # Requires: claude CLI, script (util-linux), plus tmux (for --split) or a
 #           supported terminal emulator (for --windows).
 
@@ -27,6 +29,7 @@ source "$SCRIPT_DIR/_companion-layout.sh"
 source "$SCRIPT_DIR/_mcp-entry.sh"
 
 INSTRUCTIONS_LOOP=""
+WATCH=1
 declare -a PRE_LAYOUT_ARGS
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -35,6 +38,8 @@ while [[ $# -gt 0 ]]; do
             INSTRUCTIONS_LOOP="$2"; shift 2 ;;
         --instructions-loop=*)
             INSTRUCTIONS_LOOP="${1#--instructions-loop=}"; shift ;;
+        --no-watch)
+            WATCH=0; shift ;;
         *)
             PRE_LAYOUT_ARGS+=("$1"); shift ;;
     esac
@@ -61,6 +66,9 @@ mcp_add "$MCP_FILE" "$MCP_NAME" "local"
 mkdir -p "$SESSIONS_DIR"
 
 LEFT_CMD="script -q -f \"$LOGFILE\""
+if [[ -z "$INSTRUCTIONS_LOOP" && "$WATCH" -eq 1 ]]; then
+    INSTRUCTIONS_LOOP="$(cat "$SCRIPT_DIR/prompts/watch.md")"
+fi
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
     RIGHT_CMD="claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
 else
