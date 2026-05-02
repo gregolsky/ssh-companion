@@ -62,7 +62,7 @@ HOSTNAME="${HOSTNAME%%:*}"
 SESSION="companion-${HOSTNAME:-session}"
 SESSION="${SESSION//./-}"
 
-if ! docker container inspect ssh-companion >/dev/null 2>&1; then
+if [[ "$(docker inspect -f '{{.State.Running}}' ssh-companion 2>/dev/null)" != "true" ]]; then
     echo "Starting ssh-companion container..."
     "$SCRIPT_DIR/start-mcp-server.sh"
 fi

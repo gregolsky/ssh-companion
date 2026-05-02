@@ -54,7 +54,7 @@ SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 LOGFILE="$SESSIONS_DIR/local-$(date +%s).log"
 SESSION="companion-local"
 
-if ! docker container inspect ssh-companion >/dev/null 2>&1; then
+if [[ "$(docker inspect -f '{{.State.Running}}' ssh-companion 2>/dev/null)" != "true" ]]; then
     echo "Starting ssh-companion container..."
     "$SCRIPT_DIR/start-mcp-server.sh"
 fi

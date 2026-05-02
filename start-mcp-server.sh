@@ -28,8 +28,14 @@ if ! docker image inspect "$IMAGE" &>/dev/null; then
         -t "$IMAGE" "$(dirname "$0")"
 fi
 
-if docker container inspect "$CONTAINER" &>/dev/null; then
+if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" == "true" ]]; then
     echo "$CONTAINER is already running."
+    exit 0
+fi
+
+if docker container inspect "$CONTAINER" &>/dev/null; then
+    echo "Restarting stopped $CONTAINER..."
+    docker start "$CONTAINER"
     exit 0
 fi
 
