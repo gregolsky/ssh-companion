@@ -57,6 +57,11 @@ HOSTNAME="${HOSTNAME%%:*}"
 SESSION="companion-${HOSTNAME:-session}"
 SESSION="${SESSION//./-}"
 
+if ! docker container inspect ssh-companion >/dev/null 2>&1; then
+    echo "Starting ssh-companion container..."
+    "$SCRIPT_DIR/start-mcp-server.sh"
+fi
+
 mcp_prune_stale "$MCP_FILE"
 MCP_SUFFIX=$(mcp_compute_suffix "$HOSTNAME")
 MCP_NAME="ssh-companion-$MCP_SUFFIX"

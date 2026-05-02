@@ -91,6 +91,12 @@ function Remove-McpEntry([string]$Name) {
     }
 }
 
+$containerCheck = docker container inspect ssh-companion 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Starting ssh-companion container..."
+    & "$ScriptDir\start-mcp-server.sh"
+}
+
 Invoke-McpPrune
 Add-McpEntry $mcpName $hostname
 
