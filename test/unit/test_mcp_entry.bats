@@ -51,14 +51,14 @@ teardown() {
 
 @test "mcp_add: falls back to empty mcpServers when no template or file" {
     rm -f "$MCP_FILE"
-    # temporarily rename example if present
     local ex="$REPO_ROOT/.mcp.json.example"
-    local ex_bak="$REPO_ROOT/.mcp.json.example.bak.$$"
-    [[ -f "$ex" ]] && mv "$ex" "$ex_bak" || true
+    local ex_bak
+    ex_bak="$(mktemp)"
+    [[ -f "$ex" ]] && { cp "$ex" "$ex_bak"; rm "$ex"; } || rm -f "$ex_bak"
     mcp_add "$MCP_FILE" "ssh-companion-test-1" "myhost"
+    [[ -f "$ex_bak" ]] && mv "$ex_bak" "$ex" || true
     [[ -f "$MCP_FILE" ]]
     jq -e '.mcpServers["ssh-companion-test-1"]' "$MCP_FILE" >/dev/null
-    [[ -f "$ex_bak" ]] && mv "$ex_bak" "$ex" || true
 }
 
 @test "mcp_add: entry has correct command and --hostname arg" {
