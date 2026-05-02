@@ -43,7 +43,8 @@ mcp_compute_suffix() {
 mcp_add() {
     local mcp_file="$1" name="$2" hostname="$3"
     local lockfile="${mcp_file}.lock"
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local template="${script_dir}/.mcp.json.example"
 
     (

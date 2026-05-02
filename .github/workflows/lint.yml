@@ -42,4 +42,4 @@ jobs:
           shopt -s nullglob
           files=( *.sh ssh-wrapper )
           echo "Checking: ${files[*]}"
-          shellcheck "${files[@]}"
+          shellcheck -x "${files[@]}"
