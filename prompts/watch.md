@@ -2,7 +2,7 @@ Watch the active session and advise on what the user is doing.
 
 Steps:
 1. Call focus_session() once to read the current session state. Note the returned byte_offset — this is your cursor.
-2. Wait approximately 60 seconds.
+2. Wait approximately 30 seconds.
 3. Call read_session_since(byte_offset=<last_offset>) to fetch only new output.
    - If the response contains rewound: true, reset your cursor to 0 and call focus_session() to get a fresh view.
    - Update your cursor to the new byte_offset returned.

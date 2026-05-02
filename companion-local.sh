@@ -70,9 +70,9 @@ if [[ -z "$INSTRUCTIONS_LOOP" && "$WATCH" -eq 1 ]]; then
     INSTRUCTIONS_LOOP="$(cat "$SCRIPT_DIR/prompts/watch.md")"
 fi
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
-    RIGHT_CMD="claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
 else
-    RIGHT_CMD="claude"
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude"
 fi
 
 run_layout "$SESSION" "local shell" "$LEFT_CMD" "Claude" "$RIGHT_CMD"

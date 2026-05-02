@@ -73,13 +73,16 @@ MCP_NAME="ssh-companion-$MCP_SUFFIX"
 mcp_add "$MCP_FILE" "$MCP_NAME" "$HOSTNAME"
 
 LEFT_CMD="docker exec -it ssh-companion $*"
+if [[ "$LAYOUT" == "split" ]]; then
+    LEFT_CMD="docker exec -it ssh-companion $*; RC=\$?; [ \$RC -ne 0 ] && tmux -L ssh-companion kill-session -t $SESSION 2>/dev/null; exit \$RC"
+fi
 if [[ -z "$INSTRUCTIONS_LOOP" && "$WATCH" -eq 1 ]]; then
     INSTRUCTIONS_LOOP="$(cat "$SCRIPT_DIR/prompts/watch.md")"
 fi
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
-    RIGHT_CMD="claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
 else
-    RIGHT_CMD="claude"
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude"
 fi
 
 run_layout "$SESSION" "SSH: ${HOSTNAME:-session}" "$LEFT_CMD" "Claude" "$RIGHT_CMD"
