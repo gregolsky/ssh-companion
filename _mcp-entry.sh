@@ -39,6 +39,48 @@ mcp_compute_suffix() {
     echo "${sanitized}-$$"
 }
 
+# _mcp_settings_file MCP_FILE  ->  echoes path to .claude/settings.json
+_mcp_settings_file() {
+    echo "$(dirname "$1")/.claude/settings.json"
+}
+
+# _mcp_add_permissions SETTINGS_FILE NAME
+_mcp_add_permissions() {
+    local settings_file="$1" name="$2"
+    local lockfile="${settings_file}.lock"
+
+    mkdir -p "$(dirname "$settings_file")"
+    if [[ ! -f "$settings_file" ]]; then
+        echo '{"permissions":{"allow":[]}}' > "$settings_file"
+    fi
+
+    local tools=("list_sessions" "focus_session" "read_session_since" "search_session")
+    local tmp
+    tmp="$(mktemp "${settings_file}.XXXXXX")"
+    local filter="."
+    for tool in "${tools[@]}"; do
+        local perm="mcp__${name}__${tool}"
+        filter+=" | if (.permissions.allow | index(\"$perm\")) == null then .permissions.allow += [\"$perm\"] else . end"
+    done
+    jq "$filter" "$settings_file" > "$tmp" && mv "$tmp" "$settings_file"
+}
+
+# _mcp_remove_permissions SETTINGS_FILE NAME
+_mcp_remove_permissions() {
+    local settings_file="$1" name="$2"
+
+    [[ -f "$settings_file" ]] || return 0
+
+    local tools=("list_sessions" "focus_session" "read_session_since" "search_session")
+    local tmp filter="."
+    for tool in "${tools[@]}"; do
+        local perm="mcp__${name}__${tool}"
+        filter+=" | .permissions.allow -= [\"$perm\"]"
+    done
+    tmp="$(mktemp "${settings_file}.XXXXXX")"
+    jq "$filter" "$settings_file" > "$tmp" && mv "$tmp" "$settings_file"
+}
+
 # mcp_add MCP_FILE NAME HOSTNAME
 mcp_add() {
     local mcp_file="$1" name="$2" hostname="$3"
@@ -46,6 +88,8 @@ mcp_add() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local template="${script_dir}/.mcp.json.example"
+    local settings_file
+    settings_file="$(_mcp_settings_file "$mcp_file")"
 
     (
         _mcp_flock_cmd -x 9
@@ -64,12 +108,16 @@ mcp_add() {
             '.mcpServers[$n] = {command:"docker", args:["exec","-i","ssh-companion","python","/app/server.py","--hostname",$h]}' \
             "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
     ) 9>"$lockfile"
+
+    _mcp_add_permissions "$settings_file" "$name"
 }
 
 # mcp_remove MCP_FILE NAME
 mcp_remove() {
     local mcp_file="$1" name="$2"
     local lockfile="${mcp_file}.lock"
+    local settings_file
+    settings_file="$(_mcp_settings_file "$mcp_file")"
 
     [[ -f "$mcp_file" ]] || return 0
 
@@ -81,37 +129,44 @@ mcp_remove() {
         jq --arg n "$name" 'del(.mcpServers[$n])' \
             "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
     ) 9>"$lockfile"
+
+    _mcp_remove_permissions "$settings_file" "$name"
 }
 
 # mcp_prune_stale MCP_FILE  —  removes entries whose embedded PID is no longer alive
 mcp_prune_stale() {
     local mcp_file="$1"
     local lockfile="${mcp_file}.lock"
+    local settings_file
+    settings_file="$(_mcp_settings_file "$mcp_file")"
 
     [[ -f "$mcp_file" ]] || return 0
+
+    local names to_del=()
+    names=$(jq -r '.mcpServers // {} | keys[] | select(test("^ssh-companion-.*-[0-9]+$"))' "$mcp_file" 2>/dev/null)
+
+    local name pid
+    while IFS= read -r name; do
+        pid="${name##*-}"
+        if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then
+            to_del+=("$name")
+        fi
+    done <<< "$names"
+
+    [[ ${#to_del[@]} -eq 0 ]] && return 0
 
     (
         _mcp_flock_cmd -x 9
 
-        local names
-        names=$(jq -r '.mcpServers // {} | keys[] | select(test("^ssh-companion-.*-[0-9]+$"))' "$mcp_file" 2>/dev/null)
-
-        local to_del=()
-        local name pid
-        while IFS= read -r name; do
-            pid="${name##*-}"
-            if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then
-                to_del+=("$name")
-            fi
-        done <<< "$names"
-
-        if [[ ${#to_del[@]} -gt 0 ]]; then
-            local tmp filter="."
-            for name in "${to_del[@]}"; do
-                filter+=" | del(.mcpServers[\"$name\"])"
-            done
-            tmp="$(mktemp "${mcp_file}.XXXXXX")"
-            jq "$filter" "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
-        fi
+        local tmp filter="."
+        for name in "${to_del[@]}"; do
+            filter+=" | del(.mcpServers[\"$name\"])"
+        done
+        tmp="$(mktemp "${mcp_file}.XXXXXX")"
+        jq "$filter" "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
     ) 9>"$lockfile"
+
+    for name in "${to_del[@]}"; do
+        _mcp_remove_permissions "$settings_file" "$name"
+    done
 }

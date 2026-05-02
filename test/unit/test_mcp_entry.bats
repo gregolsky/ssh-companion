@@ -7,11 +7,15 @@ setup() {
     MCP_FILE="$(mktemp)"
     rm -f "$MCP_FILE"  # let helpers create it
     export MCP_FILE
+    SETTINGS_FILE="$(dirname "$MCP_FILE")/.claude/settings.json"
+    export SETTINGS_FILE
     source "$REPO_ROOT/_mcp-entry.sh"
 }
 
 teardown() {
     rm -f "$MCP_FILE" "$MCP_FILE.lock"
+    rm -f "$SETTINGS_FILE" "$SETTINGS_FILE.lock"
+    rmdir "$(dirname "$SETTINGS_FILE")" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -186,4 +190,54 @@ teardown() {
     local count
     count="$(jq '.mcpServers | length' "$MCP_FILE")"
     [[ "$count" -eq 10 ]]
+}
+
+# ---------------------------------------------------------------------------
+# Permissions
+# ---------------------------------------------------------------------------
+
+@test "mcp_add: writes all four tool permissions to settings.json" {
+    mcp_add "$MCP_FILE" "ssh-companion-test-1" "myhost"
+    [[ -f "$SETTINGS_FILE" ]]
+    for tool in list_sessions focus_session read_session_since search_session; do
+        jq -e ".permissions.allow | index(\"mcp__ssh-companion-test-1__${tool}\") != null" "$SETTINGS_FILE" >/dev/null
+    done
+}
+
+@test "mcp_add: does not duplicate permissions on re-add" {
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a"
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a"
+    local count
+    count="$(jq '[.permissions.allow[] | select(startswith("mcp__ssh-companion-a-1__"))] | length' "$SETTINGS_FILE")"
+    [[ "$count" -eq 4 ]]
+}
+
+@test "mcp_remove: removes permissions from settings.json" {
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a"
+    mcp_remove "$MCP_FILE" "ssh-companion-a-1"
+    [[ -f "$SETTINGS_FILE" ]]
+    local count
+    count="$(jq '[.permissions.allow[] | select(startswith("mcp__ssh-companion-a-1__"))] | length' "$SETTINGS_FILE")"
+    [[ "$count" -eq 0 ]]
+}
+
+@test "mcp_remove: preserves other server permissions when removing one" {
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a"
+    mcp_add "$MCP_FILE" "ssh-companion-b-2" "b"
+    mcp_remove "$MCP_FILE" "ssh-companion-a-1"
+    local count
+    count="$(jq '[.permissions.allow[] | select(startswith("mcp__ssh-companion-b-2__"))] | length' "$SETTINGS_FILE")"
+    [[ "$count" -eq 4 ]]
+}
+
+@test "mcp_prune_stale: removes permissions for pruned entries" {
+    mcp_add "$MCP_FILE" "ssh-companion-dead-999999999" "dead"
+    local live_pid=$$
+    mcp_add "$MCP_FILE" "ssh-companion-live-${live_pid}" "live"
+    mcp_prune_stale "$MCP_FILE"
+    local dead_count live_count
+    dead_count="$(jq '[.permissions.allow[] | select(startswith("mcp__ssh-companion-dead-"))] | length' "$SETTINGS_FILE")"
+    live_count="$(jq "[.permissions.allow[] | select(startswith(\"mcp__ssh-companion-live-${live_pid}__\"))] | length" "$SETTINGS_FILE")"
+    [[ "$dead_count" -eq 0 ]]
+    [[ "$live_count" -eq 4 ]]
 }

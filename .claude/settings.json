@@ -1,10 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "mcp__ssh-companion-*__list_sessions",
-      "mcp__ssh-companion-*__focus_session",
-      "mcp__ssh-companion-*__read_session_since",
-      "mcp__ssh-companion-*__search_session"
+      "mcp__ssh-companion-192-168-60-60-356879__list_sessions",
+      "mcp__ssh-companion-192-168-60-60-356879__focus_session",
+      "mcp__ssh-companion-192-168-60-60-356879__read_session_since",
+      "mcp__ssh-companion-192-168-60-60-356879__search_session"
     ]
   }
 }
