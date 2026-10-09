@@ -13,78 +13,74 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Sourced by companion.sh and companion-local.sh.
-# Manages per-session entries in the project-local .mcp.json.
+# jq filters are passed through _mcp_jq_update; their $vars are jq's, not the shell's.
+# shellcheck disable=SC2016
 
-_mcp_flock_cmd() {
+# Sourced by companion.sh and companion-local.sh.
+# Manages per-session entries in the project-local .mcp.json and the matching
+# allow-rules in .claude/settings.local.json (per-user, never committed).
+# All writes to both files happen under one lock on "<mcp_file>.lock" (fd 9).
+
+# Take an exclusive lock on fd 9, held until the calling subshell exits.
+_mcp_lock_fd9() {
     if command -v flock >/dev/null 2>&1; then
-        flock "$@"
+        flock -x 9
     else
-        python3 -c "
-import fcntl, sys, subprocess
-with open(sys.argv[1], 'w') as f:
-    fcntl.flock(f, fcntl.LOCK_EX)
-    subprocess.run(sys.argv[2:], check=True)
-" "$@"
+        python3 -c 'import fcntl, sys; fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX)' 9
     fi
 }
 
 # mcp_compute_suffix HOSTNAME  ->  echoes "<sanitized-host>-<pid>" or "session-<pid>"
+# Only [A-Za-z0-9_-] survive, so the server name matches Claude Code's tool names.
 mcp_compute_suffix() {
     local host="$1"
-    local sanitized="${host//[.:]/-}"
+    local sanitized="${host//[^A-Za-z0-9_-]/-}"
     if [[ -z "$sanitized" ]]; then
         sanitized="session"
     fi
     echo "${sanitized}-$$"
 }
 
-# _mcp_settings_file MCP_FILE  ->  echoes path to .claude/settings.json
+# _mcp_settings_file MCP_FILE  ->  echoes path to .claude/settings.local.json
 _mcp_settings_file() {
-    echo "$(dirname "$1")/.claude/settings.json"
+    echo "$(dirname "$1")/.claude/settings.local.json"
 }
 
-# _mcp_add_permissions SETTINGS_FILE NAME
-_mcp_add_permissions() {
-    local settings_file="$1" name="$2"
-    local lockfile="${settings_file}.lock"
-
-    mkdir -p "$(dirname "$settings_file")"
-    if [[ ! -f "$settings_file" ]]; then
-        echo '{"permissions":{"allow":[]}}' > "$settings_file"
-    fi
-
-    local tools=("list_sessions" "focus_session" "read_session_since" "search_session")
+# _mcp_jq_update FILE [JQ-ARGS...] FILTER  —  rewrite FILE through jq; leaves FILE
+# untouched and removes the temp file if jq fails.
+_mcp_jq_update() {
+    local file="$1"; shift
     local tmp
-    tmp="$(mktemp "${settings_file}.XXXXXX")"
-    local filter="."
-    for tool in "${tools[@]}"; do
-        local perm="mcp__${name}__${tool}"
-        filter+=" | if (.permissions.allow | index(\"$perm\")) == null then .permissions.allow += [\"$perm\"] else . end"
-    done
-    jq "$filter" "$settings_file" > "$tmp" && mv "$tmp" "$settings_file"
+    tmp="$(mktemp "${file}.XXXXXX")" || return 1
+    if jq "$@" "$file" > "$tmp"; then
+        mv "$tmp" "$file"
+    else
+        rm -f "$tmp"
+        return 1
+    fi
 }
 
-# _mcp_remove_permissions SETTINGS_FILE NAME
-_mcp_remove_permissions() {
+# _mcp_add_permission SETTINGS_FILE NAME  —  caller must hold the lock
+_mcp_add_permission() {
     local settings_file="$1" name="$2"
+    mkdir -p "$(dirname "$settings_file")"
+    [[ -f "$settings_file" ]] || echo '{}' > "$settings_file"
+    _mcp_jq_update "$settings_file" --arg p "mcp__${name}" \
+        '.permissions.allow = (((.permissions.allow // []) - [$p]) + [$p])'
+}
 
+# _mcp_remove_permissions SETTINGS_FILE NAMES  —  NAMES is newline-separated;
+# caller must hold the lock
+_mcp_remove_permissions() {
+    local settings_file="$1" names="$2"
     [[ -f "$settings_file" ]] || return 0
-
-    local tools=("list_sessions" "focus_session" "read_session_since" "search_session")
-    local tmp filter="."
-    for tool in "${tools[@]}"; do
-        local perm="mcp__${name}__${tool}"
-        filter+=" | .permissions.allow -= [\"$perm\"]"
-    done
-    tmp="$(mktemp "${settings_file}.XXXXXX")"
-    jq "$filter" "$settings_file" > "$tmp" && mv "$tmp" "$settings_file"
+    _mcp_jq_update "$settings_file" --arg names "$names" \
+        '.permissions.allow = ((.permissions.allow // []) - [$names | split("\n")[] | "mcp__" + .])'
 }
 
 # mcp_add MCP_FILE NAME HOSTNAME
 mcp_add() {
     local mcp_file="$1" name="$2" hostname="$3"
-    local lockfile="${mcp_file}.lock"
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local template="${script_dir}/.mcp.json.example"
@@ -92,7 +88,7 @@ mcp_add() {
     settings_file="$(_mcp_settings_file "$mcp_file")"
 
     (
-        _mcp_flock_cmd -x 9
+        _mcp_lock_fd9
 
         if [[ ! -f "$mcp_file" ]]; then
             if [[ -f "$template" ]]; then
@@ -102,71 +98,49 @@ mcp_add() {
             fi
         fi
 
-        local tmp
-        tmp="$(mktemp "${mcp_file}.XXXXXX")"
-        jq --arg n "$name" --arg h "$hostname" \
+        _mcp_jq_update "$mcp_file" --arg n "$name" --arg h "$hostname" \
             '.mcpServers[$n] = {command:"docker", args:["exec","-i","ssh-companion","python","/app/server.py","--hostname",$h]}' \
-            "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
-    ) 9>"$lockfile"
-
-    _mcp_add_permissions "$settings_file" "$name"
+            && _mcp_add_permission "$settings_file" "$name"
+    ) 9>"${mcp_file}.lock"
 }
 
 # mcp_remove MCP_FILE NAME
 mcp_remove() {
     local mcp_file="$1" name="$2"
-    local lockfile="${mcp_file}.lock"
     local settings_file
     settings_file="$(_mcp_settings_file "$mcp_file")"
 
     [[ -f "$mcp_file" ]] || return 0
 
     (
-        _mcp_flock_cmd -x 9
-
-        local tmp
-        tmp="$(mktemp "${mcp_file}.XXXXXX")"
-        jq --arg n "$name" 'del(.mcpServers[$n])' \
-            "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
-    ) 9>"$lockfile"
-
-    _mcp_remove_permissions "$settings_file" "$name"
+        _mcp_lock_fd9
+        _mcp_jq_update "$mcp_file" --arg n "$name" 'del(.mcpServers[$n])'
+        _mcp_remove_permissions "$settings_file" "$name"
+    ) 9>"${mcp_file}.lock"
 }
 
 # mcp_prune_stale MCP_FILE  —  removes entries whose embedded PID is no longer alive
 mcp_prune_stale() {
     local mcp_file="$1"
-    local lockfile="${mcp_file}.lock"
     local settings_file
     settings_file="$(_mcp_settings_file "$mcp_file")"
 
     [[ -f "$mcp_file" ]] || return 0
 
-    local names to_del=()
-    names=$(jq -r '.mcpServers // {} | keys[] | select(test("^ssh-companion-.*-[0-9]+$"))' "$mcp_file" 2>/dev/null)
-
-    local name pid
-    while IFS= read -r name; do
-        pid="${name##*-}"
-        if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then
-            to_del+=("$name")
-        fi
-    done <<< "$names"
-
-    [[ ${#to_del[@]} -eq 0 ]] && return 0
-
     (
-        _mcp_flock_cmd -x 9
+        _mcp_lock_fd9
 
-        local tmp filter="."
-        for name in "${to_del[@]}"; do
-            filter+=" | del(.mcpServers[\"$name\"])"
-        done
-        tmp="$(mktemp "${mcp_file}.XXXXXX")"
-        jq "$filter" "$mcp_file" > "$tmp" && mv "$tmp" "$mcp_file"
-    ) 9>"$lockfile"
+        local name stale=""
+        while IFS= read -r name; do
+            [[ -n "$name" ]] || continue
+            kill -0 "${name##*-}" 2>/dev/null || stale+="${name}"$'\n'
+        done < <(jq -r '.mcpServers // {} | keys[] | select(test("^ssh-companion-.*-[0-9]+$"))' "$mcp_file" 2>/dev/null)
 
-    for name in "${to_del[@]}"; do
-        _mcp_remove_permissions "$settings_file" "$name"
-    done
+        [[ -n "$stale" ]] || exit 0
+        stale="${stale%$'\n'}"
+
+        _mcp_jq_update "$mcp_file" --arg names "$stale" \
+            'reduce ($names | split("\n"))[] as $n (.; del(.mcpServers[$n]))'
+        _mcp_remove_permissions "$settings_file" "$stale"
+    ) 9>"${mcp_file}.lock"
 }

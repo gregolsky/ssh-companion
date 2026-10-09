@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MCP_FILE="$SCRIPT_DIR/.mcp.json"
 source "$SCRIPT_DIR/_companion-layout.sh"
 source "$SCRIPT_DIR/_mcp-entry.sh"
+source "$SCRIPT_DIR/_ssh-host.sh"
 
 INSTRUCTIONS_LOOP=""
 WATCH=1
@@ -51,7 +52,7 @@ parse_layout_args LAYOUT LAYOUT_EXPLICIT REMAINING "$@"
 set -- "${REMAINING[@]}"
 
 SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
-LOGFILE="$SESSIONS_DIR/local-$(date +%s).log"
+AUDIT_FILE="$SESSIONS_DIR/audit.jsonl"
 SESSION="companion-local"
 
 if [[ "$(docker inspect -f '{{.State.Running}}' ssh-companion 2>/dev/null)" != "true" ]]; then
@@ -63,17 +64,33 @@ mcp_prune_stale "$MCP_FILE"
 MCP_NAME="ssh-companion-local-$$"
 mcp_add "$MCP_FILE" "$MCP_NAME" "local"
 
+# Session logs can contain secrets: keep them private to this user.
 mkdir -p "$SESSIONS_DIR"
+chmod 700 "$SESSIONS_DIR"
+LOGFILE="$(claim_log_file "$SESSIONS_DIR" local)" || {
+    echo "Error: cannot create a session log in $SESSIONS_DIR" >&2
+    exit 1
+}
 
-LEFT_CMD="script -q -f \"$LOGFILE\""
+# script runs inside the layout's shell, so session_end is recorded there too.
+AUDIT_END="source $(printf '%q' "$SCRIPT_DIR/_ssh-host.sh") && audit_event \"\$@\""
+LEFT_CMD="umask 077; script -q -f -e -T $(printf '%q' "$LOGFILE.timing") $(printf '%q' "$LOGFILE"); rc=\$?"
+LEFT_CMD+="; bash -c $(printf '%q' "$AUDIT_END") _ $(printf '%q ' "$AUDIT_FILE" session_end host local logfile "${LOGFILE##*/}")exit_code \"\$rc\""
 if [[ -z "$INSTRUCTIONS_LOOP" && "$WATCH" -eq 1 ]]; then
     INSTRUCTIONS_LOOP="$(cat "$SCRIPT_DIR/prompts/watch.md")"
 fi
+# Session output is untrusted (it comes from remote hosts), so the companion
+# Claude is observe-only: no shell, file edits or web access.
+CLAUDE_FLAGS="--disallowedTools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
-    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
+    # The prompt goes before the flags: --disallowedTools is variadic.
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP") $CLAUDE_FLAGS"
 else
-    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude"
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $CLAUDE_FLAGS"
 fi
+
+audit_event "$AUDIT_FILE" session_start host local logfile "${LOGFILE##*/}" \
+    user "${USER:-unknown}" command "${SHELL:-sh}"
 
 run_layout "$SESSION" "local shell" "$LEFT_CMD" "Claude" "$RIGHT_CMD"
 

@@ -71,6 +71,16 @@ parse_layout_args() {
     fi
 }
 
+# build_ssh_cmd ARGS...  ->  echoes "docker exec -it ssh-companion <args>" with
+# each argument shell-quoted, so the layout's shell passes it to docker verbatim
+# instead of interpreting ;, |, $() etc. on the local machine. The host user is
+# passed in for the audit log (inside the container everyone is "companion").
+build_ssh_cmd() {
+    printf 'docker exec -it -e %q ssh-companion' "COMPANION_HOST_USER=${USER:-unknown}"
+    printf ' %q' "$@"
+    printf '\n'
+}
+
 launch_term() {
     local title="$1" cmd="$2"
     local term="${COMPANION_TERMINAL_APP:-$(detect_terminal)}" || true
@@ -86,7 +96,7 @@ launch_term() {
         alacritty)       alacritty -T "$title" -e bash -c "$cmd; exec bash" & ;;
         kitty)           kitty --title "$title" bash -c "$cmd; exec bash" & ;;
         wezterm)         wezterm start -- bash -c "$cmd; exec bash" & ;;
-        xfce4-terminal)  xfce4-terminal --title "$title" -e "bash -c '$cmd; exec bash'" & ;;
+        xfce4-terminal)  xfce4-terminal --title "$title" -x bash -c "$cmd; exec bash" & ;;
         xterm|x-terminal-emulator)
                          "$term" -T "$title" -e bash -c "$cmd; exec bash" & ;;
         *)               echo "Error: COMPANION_TERMINAL_APP='$term' not supported." >&2; exit 1 ;;

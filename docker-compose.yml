@@ -11,6 +11,11 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
-      - "${SSH_COMPANION_SSH_DIR:-$HOME/.ssh}:/home/companion/.ssh"
+      - "${SSH_COMPANION_SSH_DIR:-$HOME/.ssh}:/home/companion/.ssh:ro"
+      - ssh-companion-known-hosts:/home/companion/.ssh-companion
       - "${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}:/sessions"
     restart: unless-stopped
+
+volumes:
+  ssh-companion-known-hosts:
+    name: ssh-companion-known-hosts

@@ -57,14 +57,17 @@ flowchart LR
 Pull the pre-built image from GitHub Container Registry and run it:
 
 ```bash
+mkdir -p -m 700 ~/.ssh-companion-sessions
 docker run -d --name ssh-companion \
-  -v ~/.ssh:/home/companion/.ssh \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  -v ~/.ssh:/home/companion/.ssh:ro \
+  -v ssh-companion-known-hosts:/home/companion/.ssh-companion \
   -v ~/.ssh-companion-sessions:/sessions \
   --restart unless-stopped \
   ghcr.io/gregolsky/ssh-companion:latest
 ```
 
-**About the key mount:** `ssh` runs *inside* the container as a non-root `companion` user, so it can only read keys that are visible inside the container. The `-v ~/.ssh:/home/companion/.ssh` line above mounts your host SSH directory at the companion user's home — your usual keys (`id_ed25519`, `id_rsa`, etc.) and `known_hosts` are picked up as normal, and new hosts can be written back to `known_hosts`. Add `:ro` to the mount if you want to keep it read-only (note: this breaks first-time host-key acceptance).
+**About the key mount:** `ssh` runs *inside* the container as a non-root `companion` user, so it can only read keys that are visible inside the container. The `-v ~/.ssh:/home/companion/.ssh:ro` line above mounts your host SSH directory **read-only** at the companion user's home — your usual keys (`id_ed25519`, `id_rsa`, etc.), `config` and `known_hosts` are picked up as normal, but nothing in the container can modify them. Newly accepted host keys go to the `ssh-companion-known-hosts` volume instead (the image's `/etc/ssh/ssh_config.d/companion.conf` lists it first in `UserKnownHostsFile`). If your `~/.ssh/config` sets its own `UserKnownHostsFile` or a `ControlPath` inside `~/.ssh`, those take precedence and will fail to write; point them somewhere outside `~/.ssh` for companion sessions.
 
 **UID caveat:** the prebuilt image pins `companion` to UID/GID 1000, which matches most single-user Linux desktops. If `id -u` on your host isn't 1000, the container won't be able to read your keys or write session logs — build from source instead:
 
@@ -217,7 +220,7 @@ Type `/ssh-perf` in the Claude pane to start a guided walkthrough of Brendan Gre
 
 ## 🖥️ Multiple servers
 
-Each server gets its own log file(s) under `~/.ssh-companion-sessions/<hostname>-<timestamp>.log`. Switching between servers just means telling Claude a different hostname — it reads the right log automatically.
+Each server gets its own log file(s) under `~/.ssh-companion-sessions/<hostname>-<timestamp>.log`. The MCP server that `companion.sh` registers is locked to its own host (`--hostname`), so one session's Claude cannot read another host's logs. To follow a different server, open it with its own `companion.sh` session. A manually configured server started without `--hostname` can still read any host by name.
 
 ```
 # You were on prod-db-1, now you're jumping to prod-web-2:
@@ -226,6 +229,25 @@ ssh user@prod-web-2
 # In Claude:
 "I'm now on prod-web-2 — what do you see?"
 ```
+
+## 🧾 Audit trail
+
+Everything lands in the sessions directory (`~/.ssh-companion-sessions/`, all files mode `600`):
+
+| File | What it records |
+|------|-----------------|
+| `<host>-<ts>.log` | The full terminal output. The first line holds the exact ssh command and start time, the last line the end time and exit code. |
+| `<host>-<ts>.log.timing` | Timing data for that log. Replay the session at real speed with `scriptreplay -t <host>-<ts>.log.timing <host>-<ts>.log`. |
+| `audit.jsonl` | One JSON line per event. `session_start` and `session_end` record host, log file, host user, ssh command and exit code. `mcp_tool` records every tool call Claude made: tool, arguments, which server, and the outcome. Session content is never copied into it. |
+
+```bash
+# Who connected where, and how it ended
+jq -c 'select(.event | startswith("session"))' ~/.ssh-companion-sessions/audit.jsonl
+# What Claude looked at
+jq -c 'select(.event == "mcp_tool") | {ts, tool, args, ok}' ~/.ssh-companion-sessions/audit.jsonl
+```
+
+Sessions that start in the same second never overwrite each other: the second one gets the next free timestamp. Commands only appear as echoed terminal output; keystrokes are deliberately not recorded, so passwords typed at prompts stay out of the logs. The trail is append-only by convention but **not tamper-evident** (your user owns the files), and nothing rotates or deletes it.
 
 ## 🛡️ Threat model
 
@@ -237,15 +259,16 @@ ssh user@prod-web-2
 
 ### What's out of scope
 
-- **Host trust.** ssh-companion assumes the host is trusted. `~/.ssh` is bind-mounted into the container (read-write by default so `known_hosts` updates work), so a compromised container still has access to your keys. If that's not acceptable, add `:ro` to the mount and accept the TOFU-verification friction.
+- **Host trust.** ssh-companion assumes the host is trusted. `~/.ssh` is bind-mounted into the container read-only, so a compromised container cannot alter your keys or config, but it can still *read* your private keys.
 - **The SSH target itself.** Whatever the user types in the session hits the remote as-is. The tool observes; it does not filter, rate-limit, or sanitize.
-- **Session log confidentiality.** Logs capture the raw session byte stream, including anything typed into interactive prompts (passwords, tokens, sudo inputs). They live at `~/.ssh-companion-sessions/` with host filesystem permissions — anyone with read access to that directory can replay them.
-- **MCP access control.** Any process on the host that can `docker exec` into the container can invoke the MCP tools and read every captured session. Claude's tool access is not sandboxed beyond that.
+- **Session log confidentiality.** Logs capture the raw session output, which includes everything the terminal echoes: commands with tokens in their arguments, `env` dumps, files you `cat`. Input that isn't echoed (password and sudo prompts) is not recorded. They live at `~/.ssh-companion-sessions/`, which the scripts create as `700` with `600` log files, so only your user (and root) can read them. Logs are never rotated or deleted automatically: clean them up yourself.
+- **MCP access control.** Any process on the host that can `docker exec` into the container can invoke the MCP tools and read every captured session.
+- **Prompt injection from session output.** Remote output is fed to Claude, so a malicious host can print text that tries to steer it. Mitigations: the companion Claude starts with `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch` and `WebSearch` disabled; the watcher prompt treats session output as untrusted; each MCP server only serves its own host. These reduce but do not eliminate the risk. Don't run the companion Claude in a bypass-permissions mode.
 - **Supply chain of `mcp[cli]` and base image.** Trivy scans known CVEs, but zero-days and compromised upstream packages are not detected.
 
 ## 🧹 Stopping / cleanup
 
-Session MCP entries are removed automatically when you close the companion window. Entries from abruptly terminated sessions are pruned the next time any companion script runs.
+Session MCP entries (and their allow-rules in the gitignored `.claude/settings.local.json`) are removed automatically when you close the companion window. Entries from abruptly terminated sessions are pruned the next time any companion script runs.
 
 To recover manually (e.g. after a system restart with stale entries):
 
@@ -257,7 +280,7 @@ jq 'del(.mcpServers | with_entries(select(.key | startswith("ssh-companion-"))))
 # Stop the container
 docker stop ssh-companion && docker rm ssh-companion
 
-# Clear session logs (optional)
+# Clear session logs, timing files and the audit log (optional)
 rm -rf ~/.ssh-companion-sessions
 ```
 
@@ -266,4 +289,4 @@ rm -rf ~/.ssh-companion-sessions
 - **Read-only**: Claude can only observe. No commands are sent to any session.
 - **Nested tmux**: works fine. The capture is at the SSH byte stream level, so what remote tmux renders is captured as-is and ANSI-stripped for Claude.
 - **No prefix clash**: `companion.sh` runs tmux on a dedicated socket with the prefix remapped to `C-q`, so `C-b` passes cleanly through to your remote tmux session. Use `C-q` as the local prefix (e.g. `C-q d` to detach, `C-q o` to switch panes).
-- **SSH keys**: `ssh` runs inside the container as a non-root `companion` user, so it can only read keys mounted into the container (default: `-v ~/.ssh:/home/companion/.ssh`). Agent forwarding (`-A`) works too — see the Setup section for details, including the UID caveat.
+- **SSH keys**: `ssh` runs inside the container as a non-root `companion` user, so it can only read keys mounted into the container (default: `-v ~/.ssh:/home/companion/.ssh:ro`). Agent forwarding (`-A`) works too — see the Setup section for details, including the UID caveat.

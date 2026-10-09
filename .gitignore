@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 .mcp.json
 .mcp.json.lock
+.claude/settings.local.json

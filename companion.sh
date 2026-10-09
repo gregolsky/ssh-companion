@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MCP_FILE="$SCRIPT_DIR/.mcp.json"
 source "$SCRIPT_DIR/_companion-layout.sh"
 source "$SCRIPT_DIR/_mcp-entry.sh"
+source "$SCRIPT_DIR/_ssh-host.sh"
 
 INSTRUCTIONS_LOOP=""
 WATCH=1
@@ -52,14 +53,12 @@ set -- "${REMAINING[@]}"
 
 [[ $# -eq 0 ]] && { echo "Usage: companion.sh [--split|--windows] [--instructions-loop \"<prompt>\"] ssh [-i key.pem] user@hostname"; exit 1; }
 
-DEST=""
-for arg in "$@"; do
-  [[ "$arg" =~ ^- ]] && continue
-  DEST="$arg"
-done
-HOSTNAME="${DEST##*@}"
-HOSTNAME="${HOSTNAME%%:*}"
-SESSION="companion-${HOSTNAME:-session}"
+# Same derivation as ssh-wrapper uses for the log file name, so the MCP
+# server's --hostname matches the log.
+SSH_ARGS=("$@")
+[[ "${SSH_ARGS[0]}" == "ssh" ]] && SSH_ARGS=("${SSH_ARGS[@]:1}")
+HOSTNAME="$(ssh_log_host "${SSH_ARGS[@]}")"
+SESSION="companion-${HOSTNAME}"
 SESSION="${SESSION//./-}"
 
 if [[ "$(docker inspect -f '{{.State.Running}}' ssh-companion 2>/dev/null)" != "true" ]]; then
@@ -72,17 +71,21 @@ MCP_SUFFIX=$(mcp_compute_suffix "$HOSTNAME")
 MCP_NAME="ssh-companion-$MCP_SUFFIX"
 mcp_add "$MCP_FILE" "$MCP_NAME" "$HOSTNAME"
 
-LEFT_CMD="docker exec -it ssh-companion $*"
+LEFT_CMD="$(build_ssh_cmd "$@")"
 if [[ "$LAYOUT" == "split" ]]; then
-    LEFT_CMD="docker exec -it ssh-companion $*; RC=\$?; [ \$RC -ne 0 ] && tmux -L ssh-companion kill-session -t $SESSION 2>/dev/null; exit \$RC"
+    LEFT_CMD+="; RC=\$?; [ \$RC -ne 0 ] && tmux -L ssh-companion kill-session -t $(printf '%q' "$SESSION") 2>/dev/null; exit \$RC"
 fi
 if [[ -z "$INSTRUCTIONS_LOOP" && "$WATCH" -eq 1 ]]; then
     INSTRUCTIONS_LOOP="$(cat "$SCRIPT_DIR/prompts/watch.md")"
 fi
+# Session output is untrusted (it comes from remote hosts), so the companion
+# Claude is observe-only: no shell, file edits or web access.
+CLAUDE_FLAGS="--disallowedTools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
-    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP")"
+    # The prompt goes before the flags: --disallowedTools is variadic.
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP") $CLAUDE_FLAGS"
 else
-    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude"
+    RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $CLAUDE_FLAGS"
 fi
 
 run_layout "$SESSION" "SSH: ${HOSTNAME:-session}" "$LEFT_CMD" "Claude" "$RIGHT_CMD"

@@ -1,2 +1,2 @@
 pytest>=8.0
-mcp[cli]
+mcp[cli]==1.30.0

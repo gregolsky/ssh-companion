@@ -13,15 +13,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DEST=""
-for arg in "$@"; do
-  [[ "$arg" =~ ^- ]] && continue
-  DEST="$arg"
-done
-HOSTNAME="${DEST##*@}"
-HOSTNAME="${HOSTNAME%%:*}"
-HOSTNAME="${HOSTNAME:-unknown}"
+# shellcheck source=_ssh-host.sh
+source /usr/local/lib/ssh-companion/ssh-host.sh
 
-LOGFILE="/sessions/${HOSTNAME}-$(date +%s).log"
+# ssh_log_host only returns names server.py accepts, so the log path can
+# never leave /sessions.
+HOSTNAME="$(ssh_log_host "$@")"
+
+AUDIT_FILE="/sessions/audit.jsonl"
+LOGFILE="$(claim_log_file /sessions "$HOSTNAME")" || {
+    echo "ssh-companion: cannot create a session log in /sessions" >&2
+    exit 1
+}
 SSH_CMD="/usr/bin/ssh $(printf '%q ' "$@")"
-exec script -q -f -e -c "$SSH_CMD" "$LOGFILE"
+
+audit_event "$AUDIT_FILE" session_start host "$HOSTNAME" logfile "${LOGFILE##*/}" \
+    user "${COMPANION_HOST_USER:-companion}" command "$SSH_CMD"
+
+# Not exec: we need to outlive script to record how the session ended. Traps
+# (rather than ignoring signals) keep the default disposition for script/ssh
+# while letting this shell reach session_end after a hangup.
+trap ':' HUP INT TERM
+# Session logs can contain secrets: keep them private to this user.
+umask 077
+script -q -f -e -T "$LOGFILE.timing" -c "$SSH_CMD" "$LOGFILE"
+rc=$?
+
+audit_event "$AUDIT_FILE" session_end host "$HOSTNAME" logfile "${LOGFILE##*/}" exit_code "$rc"
+exit "$rc"

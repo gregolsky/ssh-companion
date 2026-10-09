@@ -19,6 +19,7 @@ IMAGE="ssh-companion"
 CONTAINER="ssh-companion"
 SESSIONS_DIR="${SSH_COMPANION_SESSIONS:-$HOME/.ssh-companion-sessions}"
 SSH_DIR="${SSH_COMPANION_SSH_DIR:-$HOME/.ssh}"
+KNOWN_HOSTS_VOLUME="${SSH_COMPANION_KNOWN_HOSTS_VOLUME:-ssh-companion-known-hosts}"
 
 if ! docker image inspect "$IMAGE" &>/dev/null; then
     echo "Building $IMAGE (uid=$(id -u) gid=$(id -g))..."
@@ -39,12 +40,17 @@ if docker container inspect "$CONTAINER" &>/dev/null; then
     exit 0
 fi
 
+# Session logs can contain secrets: keep them private to this user.
 mkdir -p "$SESSIONS_DIR"
+chmod 700 "$SESSIONS_DIR"
 
+# ~/.ssh is read-only; ssh records new host keys in the writable
+# ssh-companion-known-hosts volume instead (see /etc/ssh/ssh_config.d).
 docker run -d --name "$CONTAINER" \
     --cap-drop=ALL \
     --security-opt=no-new-privileges \
-    -v "$SSH_DIR:/home/companion/.ssh" \
+    -v "$SSH_DIR:/home/companion/.ssh:ro" \
+    -v "$KNOWN_HOSTS_VOLUME:/home/companion/.ssh-companion" \
     -v "$SESSIONS_DIR:/sessions" \
     "$IMAGE"
 

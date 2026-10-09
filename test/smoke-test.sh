@@ -25,7 +25,10 @@ SESSIONS_DIR="$(mktemp -d)"
 # Use a throwaway SSH dir so the test never touches the developer's real keys.
 SSH_DIR="$(mktemp -d)"
 
-trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$SESSIONS_DIR" "$SSH_DIR"' EXIT
+# Throwaway known-hosts volume so the test never touches the real one.
+KNOWN_HOSTS_VOLUME="ssh-companion-smoke-known-hosts-$$"
+
+trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; docker volume rm -f "$KNOWN_HOSTS_VOLUME" >/dev/null 2>&1 || true; rm -rf "$SESSIONS_DIR" "$SSH_DIR"' EXIT
 
 pass=0
 fail=0
@@ -45,6 +48,7 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 echo "==> Starting container via start-mcp-server.sh"
 SSH_COMPANION_SESSIONS="$SESSIONS_DIR" \
 SSH_COMPANION_SSH_DIR="$SSH_DIR" \
+SSH_COMPANION_KNOWN_HOSTS_VOLUME="$KNOWN_HOSTS_VOLUME" \
     bash "$REPO_ROOT/start-mcp-server.sh"
 
 # Give the container a beat to settle before we inspect it.
@@ -72,6 +76,49 @@ assert "ssh wrapper in place" \
 
 assert "/sessions writable by runtime user" \
     docker exec "$CONTAINER" sh -c 'touch /sessions/.probe && rm /sessions/.probe'
+
+assert "ssh dir mounted read-only" \
+    bash -c '! docker exec '"$CONTAINER"' touch /home/companion/.ssh/.probe 2>/dev/null'
+
+assert "known_hosts volume writable" \
+    docker exec "$CONTAINER" sh -c 'touch /home/companion/.ssh-companion/known_hosts'
+
+assert "ssh uses the writable known_hosts first" \
+    bash -c 'docker exec '"$CONTAINER"' ssh -G example.invalid | grep -q "^userknownhostsfile /home/companion/.ssh-companion/known_hosts"'
+
+assert "host sessions dir is private (700)" \
+    bash -c '[ "$(stat -c %a "'"$SESSIONS_DIR"'")" = "700" ]'
+
+# ssh fails fast (no such host); we only care about the log the wrapper creates.
+docker exec "$CONTAINER" ssh -o BatchMode=yes -o ConnectTimeout=2 '../../tmp/evil' </dev/null >/dev/null 2>&1 || true
+
+assert "wrapper refuses path-like hostnames (logs as unknown)" \
+    bash -c 'ls "'"$SESSIONS_DIR"'"/unknown-*.log >/dev/null 2>&1 && ! docker exec '"$CONTAINER"' sh -c "ls /tmp/evil* 2>/dev/null | grep -q ."'
+
+docker exec "$CONTAINER" ssh -o BatchMode=yes -o ConnectTimeout=2 -p 2222 user@alpha.invalid uptime </dev/null >/dev/null 2>&1 || true
+
+assert "log is named after the destination, not the remote command" \
+    bash -c 'ls "'"$SESSIONS_DIR"'"/alpha.invalid-*.log >/dev/null 2>&1 && ! ls "'"$SESSIONS_DIR"'"/uptime-*.log >/dev/null 2>&1'
+
+# Two sessions to the same host started back to back (same second, most likely).
+for _ in 1 2; do
+    docker exec "$CONTAINER" ssh -o BatchMode=yes -o ConnectTimeout=2 beta.invalid </dev/null >/dev/null 2>&1 || true
+done
+
+assert "same-second sessions get separate logs" \
+    bash -c '[ "$(ls "'"$SESSIONS_DIR"'"/beta.invalid-*.log | wc -l)" -eq 2 ]'
+
+assert "each log has a timing file scriptreplay accepts" \
+    bash -c 'for f in "'"$SESSIONS_DIR"'"/beta.invalid-*.log; do [ -s "$f.timing" ] && docker exec '"$CONTAINER"' scriptreplay -t "/sessions/${f##*/}.timing" "/sessions/${f##*/}" -d 1000 >/dev/null || exit 1; done'
+
+assert "audit.jsonl records session start and end with exit code" \
+    bash -c 'jq -se "map(select(.host == \"beta.invalid\")) | (map(select(.event == \"session_start\")) | length) == 2 and (map(select(.event == \"session_end\" and .exit_code == 255)) | length) == 2" "'"$SESSIONS_DIR"'"/audit.jsonl >/dev/null'
+
+assert "audit.jsonl is private (600)" \
+    bash -c '[ "$(stat -c %a "'"$SESSIONS_DIR"'"/audit.jsonl)" = "600" ]'
+
+assert "session logs are private (600)" \
+    bash -c '[ "$(stat -c %a "'"$SESSIONS_DIR"'"/unknown-*.log | head -1)" = "600" ]'
 
 assert "MCP server imports cleanly" \
     bash -c '[ "$(docker exec '"$CONTAINER"' python -c "import sys; sys.path.insert(0, \"/app\"); import server; print(server.mcp.name)")" = "ssh-companion" ]'
