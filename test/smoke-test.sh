@@ -100,6 +100,12 @@ docker exec "$CONTAINER" ssh -o BatchMode=yes -o ConnectTimeout=2 -p 2222 user@a
 assert "log is named after the destination, not the remote command" \
     bash -c 'ls "'"$SESSIONS_DIR"'"/alpha.invalid-*.log >/dev/null 2>&1 && ! ls "'"$SESSIONS_DIR"'"/uptime-*.log >/dev/null 2>&1'
 
+# ssh -G only prints the resolved config, so the log shows the arguments ssh got.
+docker exec "$CONTAINER" ssh -G -o "$(printf 'RemoteCommand=echo zażółć\tx')" gamma.invalid </dev/null >/dev/null 2>&1 || true
+
+assert "non-ASCII and tab arguments reach ssh unchanged" \
+    bash -c 'grep -q "^remotecommand echo zażółć	x" "'"$SESSIONS_DIR"'"/gamma.invalid-*.log'
+
 # Two sessions to the same host started back to back (same second, most likely).
 for _ in 1 2; do
     docker exec "$CONTAINER" ssh -o BatchMode=yes -o ConnectTimeout=2 beta.invalid </dev/null >/dev/null 2>&1 || true

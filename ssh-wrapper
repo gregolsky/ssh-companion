@@ -36,7 +36,9 @@ audit_event "$AUDIT_FILE" session_start host "$HOSTNAME" logfile "${LOGFILE##*/}
 trap ':' HUP INT TERM
 # Session logs can contain secrets: keep them private to this user.
 umask 077
-script -q -f -e -T "$LOGFILE.timing" -c "$SSH_CMD" "$LOGFILE"
+# script runs the command with $SHELL, and the %q quoting above is bash syntax
+# ($'...' for tabs, newlines and non-ASCII), which /bin/sh (dash) would mangle.
+SHELL=/bin/bash script -q -f -e -T "$LOGFILE.timing" -c "$SSH_CMD" "$LOGFILE"
 rc=$?
 
 audit_event "$AUDIT_FILE" session_end host "$HOSTNAME" logfile "${LOGFILE##*/}" exit_code "$rc"

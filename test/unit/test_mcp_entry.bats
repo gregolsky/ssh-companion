@@ -321,3 +321,50 @@ rule_count() {
     [[ "$(jq '.mcpServers | length' "$MCP_FILE")" -eq 10 ]]
     [[ "$(rule_count)" -eq 10 ]]
 }
+
+@test "mcp_add: passes --prompt-regex before --hostname when given" {
+    mcp_add "$MCP_FILE" "ssh-companion-prod-1" "prod" '^>>> (?P<cmd>.*)$'
+    local args
+    args="$(jq -r '.mcpServers["ssh-companion-prod-1"].args[-4:]|join(" ")' "$MCP_FILE")"
+    [[ "$args" == '--prompt-regex ^>>> (?P<cmd>.*)$ --hostname prod' ]]
+}
+
+@test "mcp_add: omits --prompt-regex when empty" {
+    mcp_add "$MCP_FILE" "ssh-companion-prod-1" "prod" ""
+    jq -e '.mcpServers["ssh-companion-prod-1"].args | index("--prompt-regex") == null' "$MCP_FILE" >/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# mcp_claude_flags
+# ---------------------------------------------------------------------------
+
+@test "mcp_claude_flags: only this session's server and the allowed tools" {
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a"
+    mcp_add "$MCP_FILE" "ssh-companion-b-2" "b"
+    eval "set -- $(mcp_claude_flags "$MCP_FILE" "ssh-companion-a-1")"
+    [ "$1" = "--tools" ]
+    [ "$2" = "$COMPANION_TOOLS" ]
+    [ "$3" = "--strict-mcp-config" ]
+    [ "$4" = "--mcp-config" ]
+    [ "$(jq -c '.mcpServers | keys' <<< "$5")" = '["ssh-companion-a-1"]' ]
+    [ "$(jq -r '.mcpServers["ssh-companion-a-1"].args[-1]' <<< "$5")" = "a" ]
+}
+
+@test "mcp_claude_flags: no tool that runs commands, touches files or the network" {
+    for t in Bash Read Write Edit Glob Grep WebFetch WebSearch Agent RemoteTrigger; do
+        [[ ",$COMPANION_TOOLS," != *",$t,"* ]]
+    done
+}
+
+@test "mcp_claude_flags: fails for an unknown entry" {
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a"
+    run mcp_claude_flags "$MCP_FILE" "ssh-companion-zz-9"
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+}
+
+@test "mcp_claude_flags: the regex survives quoting" {
+    mcp_add "$MCP_FILE" "ssh-companion-a-1" "a" '^λ \S+ (?P<cmd>.*)$'
+    eval "set -- $(mcp_claude_flags "$MCP_FILE" "ssh-companion-a-1")"
+    [ "$(jq -r '.mcpServers["ssh-companion-a-1"].args | index("--prompt-regex") as $i | .[$i + 1]' <<< "$5")" = '^λ \S+ (?P<cmd>.*)$' ]
+}

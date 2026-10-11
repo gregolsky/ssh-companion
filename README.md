@@ -181,11 +181,23 @@ Once you're in a session, switch to the Claude pane and ask:
 What's happening on prod-db-1?
 ```
 
-Claude will call `focus_session("prod-db-1")` and read the last 200 lines of your session.
+Claude will call `list_commands` to see what you ran, then read the output of the commands that matter (or `focus_session("prod-db-1")` for the last 80 lines of the screen).
 
 ### Active watch mode (default)
 
 By default, every `companion.sh` and `companion-local.sh` launch boots Claude into a `/loop` that watches the session every ~60s and advises on what the user is doing — errors, non-zero exits, OOM messages, high load, stack traces.
+
+The watcher keeps token use low. On each tick it calls `list_commands`, which returns only the commands typed since the last tick. For each command it also gives the output length and up to three lines that look like errors (tracebacks, OOM kills, "permission denied", and so on). The server finds those lines; Claude never sees the raw output for this. Claude reads a command's output only when it was flagged or relates to what you asked, and even then fetches just a grep match or a few head/tail lines. All output is cleaned before Claude sees it:
+
+- progress bars are collapsed to their final frame
+- repeated lines become `line (xN)`
+- very long lines are cut off
+
+Commands are found by matching your shell prompt, which the server learns from the session itself, so custom prompts work without any setup. When the shell has been idle for a couple of seconds, the log ends with the prompt on an unfinished line. Once an earlier line shows that same prompt followed by a command, the server turns it into a pattern: digits and the current directory may vary, everything else must match. It keeps up to three learned prompts per session, so switching to root with `sudo -i` is covered too. A built-in pattern runs alongside the learned ones. It covers `user@host:dir$`, `[user@host dir]#`, zsh-style `user@host ~ %`, a `(venv)` prefix, and bare `$`, `#` and `❯` prompts. `list_commands` reports which kind is in use in its `prompt` field: `learned`, `default` or `custom`. If both miss your prompt, pass your own regex with a `cmd` group for the typed command. You can do this with `--prompt-regex`, or set it once in `SSH_COMPANION_PROMPT_REGEX` (`-PromptRegex` on Windows). A custom regex replaces both the learned and the built-in patterns:
+
+```bash
+./companion.sh --prompt-regex '^λ (?P<cmd>.*)$' ssh ubuntu@prod-db-1
+```
 
 To disable it:
 
@@ -207,15 +219,17 @@ Works the same with `companion-local.sh`. Flags must come before the `ssh` subco
 
 ### Performance checklist (`/ssh-perf`)
 
-Type `/ssh-perf` in the Claude pane to start a guided walkthrough of Brendan Gregg's 60-second Linux performance checklist. Claude presents each command for you to paste in the left pane, reads the output via `read_session_since`, interprets the key fields (CPU saturation, I/O wait, swap pressure, TCP errors), and tracks a progress checklist across the session. After all 10 steps it summarizes the top bottlenecks and suggests follow-up commands.
+Type `/ssh-perf` in the Claude pane to diagnose a slow host with Brendan Gregg's 60-second Linux performance checklist. Claude gives you one block to paste in the left pane. It runs for about 15 seconds and covers load, pressure stall information (PSI), kernel errors, CPU, per-process use, disk I/O, memory, free space, network and failed services. Tools that are missing (`sysstat`, PSI) are reported instead of failing. Claude reads each section through `list_commands` and `read_command_output`, starting with the ones that match your symptom, and keeps a findings table. Then it gives you one or two targeted follow-up commands for whatever looks wrong, until the cause is clear.
 
 ## 🛠️ MCP Tools
 
 | Tool | Description |
 |------|-------------|
 | `list_sessions()` | List all captured sessions by hostname with last-active time |
-| `focus_session(hostname, lines=200)` | Read the latest session log — returns clean text + byte_offset |
-| `read_session_since(hostname, byte_offset)` | Efficient poll — only new output since last read |
+| `list_commands(hostname, since_byte_offset=0, logfile="")` | Commands the user ran, each with an id, output size and error-looking lines. No output |
+| `read_command_output(id, hostname, head=20, tail=40, grep="", logfile="")` | Output of one command: head/tail, or only the lines matching `grep` |
+| `focus_session(hostname, lines=80)` | Read the latest session log — returns clean text + byte_offset |
+| `read_session_since(hostname, byte_offset, grep="", logfile="")` | Efficient poll — only new output since last read, optionally filtered by regex. Passing the `logfile` from the last read makes a new session come back as `rewound` |
 | `search_session(hostname, pattern)` | Grep all logs for a hostname using a Python regex |
 
 ## 🖥️ Multiple servers
@@ -263,7 +277,8 @@ Sessions that start in the same second never overwrite each other: the second on
 - **The SSH target itself.** Whatever the user types in the session hits the remote as-is. The tool observes; it does not filter, rate-limit, or sanitize.
 - **Session log confidentiality.** Logs capture the raw session output, which includes everything the terminal echoes: commands with tokens in their arguments, `env` dumps, files you `cat`. Input that isn't echoed (password and sudo prompts) is not recorded. They live at `~/.ssh-companion-sessions/`, which the scripts create as `700` with `600` log files, so only your user (and root) can read them. Logs are never rotated or deleted automatically: clean them up yourself.
 - **MCP access control.** Any process on the host that can `docker exec` into the container can invoke the MCP tools and read every captured session.
-- **Prompt injection from session output.** Remote output is fed to Claude, so a malicious host can print text that tries to steer it. Mitigations: the companion Claude starts with `Bash`, `Edit`, `Write`, `NotebookEdit`, `WebFetch` and `WebSearch` disabled; the watcher prompt treats session output as untrusted; each MCP server only serves its own host. These reduce but do not eliminate the risk. Don't run the companion Claude in a bypass-permissions mode.
+- **Prompt injection from session output.** Remote output is fed to Claude, so a malicious host can print text that tries to steer it. Mitigations: the companion Claude starts with an allowlist instead of a deny-list. It gets only its own session's MCP server (`--strict-mcp-config`), so no other MCP servers, claude.ai connectors such as Gmail or Drive, or other hosts' sessions. Its built-in tools are limited to what `/loop` and skills need (`--tools Skill,ScheduleWakeup,CronCreate,CronList,CronDelete,ToolSearch`), so it cannot run commands, read or write files, or reach the network. The watcher prompt also treats session output as untrusted. These reduce but do not eliminate the risk: injected text can still mislead what Claude tells you. Don't run the companion Claude in a bypass-permissions mode.
+- **Hostile output and the session tools.** The server works only on text: prompt patterns learned from the log are escaped before use, and the built-in prompt pattern runs in linear time, so crafted output cannot inject or stall prompt detection. Two known limits remain. A `grep` regex chosen by Claude runs with no timeout, so a badly written pattern on crafted output can stall that one MCP server until it is restarted. And when a one-line command's output starts with `> `, those first lines are taken as the continuation of a multi-line command and left out.
 - **Supply chain of `mcp[cli]` and base image.** Trivy scans known CVEs, but zero-days and compromised upstream packages are not detected.
 
 ## 🧹 Stopping / cleanup

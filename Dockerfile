@@ -36,7 +36,7 @@ COPY _ssh-host.sh /usr/local/lib/ssh-companion/ssh-host.sh
 COPY ssh-wrapper /usr/local/bin/ssh
 RUN chmod +x /usr/local/bin/ssh
 
-COPY server.py /app/server.py
+COPY server.py transcript.py /app/
 
 RUN mkdir -p /sessions && chown companion:companion /sessions && chmod 700 /sessions
 
@@ -48,6 +48,9 @@ RUN mkdir -p /home/companion/.ssh-companion \
     && chmod 700 /home/companion/.ssh-companion \
     && printf 'UserKnownHostsFile /home/companion/.ssh-companion/known_hosts /home/companion/.ssh/known_hosts\n' \
         > /etc/ssh/ssh_config.d/companion.conf
+
+# UTF-8 locale, so non-ASCII text in ssh arguments and session output is kept as is.
+ENV LANG=C.UTF-8
 
 USER companion
 VOLUME /sessions

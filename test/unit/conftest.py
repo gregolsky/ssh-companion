@@ -13,6 +13,9 @@ import server  # noqa: E402
 def reset_server_globals(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "SESSIONS_DIR", tmp_path)
     monkeypatch.setattr(server, "DEFAULT_HOSTNAME", "")
+    monkeypatch.setattr(server, "CUSTOM_PROMPT_RE", None)
+    monkeypatch.setattr(server, "LEARNED_PROMPTS", {})
+    monkeypatch.setattr(server, "LEARN_IDLE_SECONDS", 0)
 
 
 @pytest.fixture

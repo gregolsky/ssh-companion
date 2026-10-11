@@ -3,3 +3,4 @@
 !ssh-wrapper
 !_ssh-host.sh
 !server.py
+!transcript.py

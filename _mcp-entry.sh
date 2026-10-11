@@ -78,9 +78,9 @@ _mcp_remove_permissions() {
         '.permissions.allow = ((.permissions.allow // []) - [$names | split("\n")[] | "mcp__" + .])'
 }
 
-# mcp_add MCP_FILE NAME HOSTNAME
+# mcp_add MCP_FILE NAME HOSTNAME [PROMPT_REGEX]
 mcp_add() {
-    local mcp_file="$1" name="$2" hostname="$3"
+    local mcp_file="$1" name="$2" hostname="$3" prompt_regex="${4:-}"
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local template="${script_dir}/.mcp.json.example"
@@ -98,8 +98,9 @@ mcp_add() {
             fi
         fi
 
-        _mcp_jq_update "$mcp_file" --arg n "$name" --arg h "$hostname" \
-            '.mcpServers[$n] = {command:"docker", args:["exec","-i","ssh-companion","python","/app/server.py","--hostname",$h]}' \
+        _mcp_jq_update "$mcp_file" --arg n "$name" --arg h "$hostname" --arg r "$prompt_regex" \
+            '.mcpServers[$n] = {command:"docker", args:(["exec","-i","ssh-companion","python","/app/server.py"]
+                + (if $r == "" then [] else ["--prompt-regex",$r] end) + ["--hostname",$h])}' \
             && _mcp_add_permission "$settings_file" "$name"
     ) 9>"${mcp_file}.lock"
 }
@@ -143,4 +144,18 @@ mcp_prune_stale() {
             'reduce ($names | split("\n"))[] as $n (.; del(.mcpServers[$n]))'
         _mcp_remove_permissions "$settings_file" "$stale"
     ) 9>"${mcp_file}.lock"
+}
+
+# Built-in tools the companion Claude gets: /loop's schedulers, skills such as
+# ssh-perf, and ToolSearch for MCP tools Claude Code loads lazily. Nothing that
+# runs commands, reads or writes files, or reaches the network.
+COMPANION_TOOLS="Skill,ScheduleWakeup,CronCreate,CronList,CronDelete,ToolSearch"
+
+# mcp_claude_flags MCP_FILE NAME  ->  echoes shell-quoted claude flags that limit
+# the companion Claude to COMPANION_TOOLS and this session's MCP server alone:
+# session output is untrusted, so no other servers, connectors or hosts' sessions.
+mcp_claude_flags() {
+    local config
+    config="$(jq -ce --arg n "$2" '{mcpServers: {($n): .mcpServers[$n]}} | select(.mcpServers[$n])' "$1")" || return 1
+    printf -- '--tools %q --strict-mcp-config --mcp-config %q' "$COMPANION_TOOLS" "$config"
 }

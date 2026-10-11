@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Usage: ./companion-local.sh [--split|--windows] [--no-watch] [--instructions-loop "<prompt>"]
+# Usage: ./companion-local.sh [--split|--windows] [--no-watch] [--instructions-loop "<prompt>"] [--prompt-regex "<regex>"]
 # Opens a captured local shell alongside Claude, either as a tmux side-by-side
 # split (default) or as two separate terminal windows.
 # By default Claude starts a /loop that watches the session every ~60s and
 # advises on what is happening. Pass --no-watch to open Claude without the loop,
 # or --instructions-loop "<prompt>" to override the default watcher with a
-# custom prompt.
+# custom prompt. --prompt-regex (or SSH_COMPANION_PROMPT_REGEX) tells the server
+# how to spot your shell prompt when the built-in pattern misses it; the
+# regex needs a (?P<cmd>...) group for the typed command.
 # Requires: claude CLI, script (util-linux), plus tmux (for --split) or a
 #           supported terminal emulator (for --windows).
 
@@ -31,6 +33,7 @@ source "$SCRIPT_DIR/_ssh-host.sh"
 
 INSTRUCTIONS_LOOP=""
 WATCH=1
+PROMPT_REGEX="${SSH_COMPANION_PROMPT_REGEX:-}"
 declare -a PRE_LAYOUT_ARGS
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -41,6 +44,11 @@ while [[ $# -gt 0 ]]; do
             INSTRUCTIONS_LOOP="${1#--instructions-loop=}"; shift ;;
         --no-watch)
             WATCH=0; shift ;;
+        --prompt-regex)
+            [[ $# -ge 2 ]] || { echo "Error: --prompt-regex requires a value." >&2; exit 1; }
+            PROMPT_REGEX="$2"; shift 2 ;;
+        --prompt-regex=*)
+            PROMPT_REGEX="${1#--prompt-regex=}"; shift ;;
         *)
             PRE_LAYOUT_ARGS+=("$1"); shift ;;
     esac
@@ -62,7 +70,7 @@ fi
 
 mcp_prune_stale "$MCP_FILE"
 MCP_NAME="ssh-companion-local-$$"
-mcp_add "$MCP_FILE" "$MCP_NAME" "local"
+mcp_add "$MCP_FILE" "$MCP_NAME" "local" "$PROMPT_REGEX"
 
 # Session logs can contain secrets: keep them private to this user.
 mkdir -p "$SESSIONS_DIR"
@@ -80,10 +88,13 @@ if [[ -z "$INSTRUCTIONS_LOOP" && "$WATCH" -eq 1 ]]; then
     INSTRUCTIONS_LOOP="$(cat "$SCRIPT_DIR/prompts/watch.md")"
 fi
 # Session output is untrusted (it comes from remote hosts), so the companion
-# Claude is observe-only: no shell, file edits or web access.
-CLAUDE_FLAGS="--disallowedTools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"
+# Claude is observe-only: no shell, files, web, connectors or other MCP servers.
+CLAUDE_FLAGS="$(mcp_claude_flags "$MCP_FILE" "$MCP_NAME")" || {
+    echo "Error: cannot read the MCP entry $MCP_NAME from $MCP_FILE" >&2
+    exit 1
+}
 if [[ -n "$INSTRUCTIONS_LOOP" ]]; then
-    # The prompt goes before the flags: --disallowedTools is variadic.
+    # The prompt goes before the flags: --tools and --mcp-config are variadic.
     RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $(printf '%q' "/loop $INSTRUCTIONS_LOOP") $CLAUDE_FLAGS"
 else
     RIGHT_CMD="cd $(printf '%q' "$SCRIPT_DIR") && claude $CLAUDE_FLAGS"

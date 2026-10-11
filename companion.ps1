@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Usage: .\companion.ps1 [-Layout split|windows] [-Split] [-Windows] [-InstructionsLoop "<prompt>"] ssh [-i key.pem] user@hostname [ssh-options...]
+# Usage: .\companion.ps1 [-Layout split|windows] [-Split] [-Windows] [-InstructionsLoop "<prompt>"] [-PromptRegex "<regex>"] ssh [-i key.pem] user@hostname [ssh-options...]
 # Opens SSH alongside Claude in Windows Terminal, either as a split pane
 # (default) or as two separate windows.
 # -InstructionsLoop pre-seeds Claude with `/loop <prompt>` so the watch
 # loop starts on launch instead of being typed by hand.
+# -PromptRegex (or $env:SSH_COMPANION_PROMPT_REGEX) tells the server how to spot
+# your shell prompt; it needs a (?P<cmd>...) group for the typed command.
 # Requires: Docker Desktop, Windows Terminal (wt), claude CLI.
 
 param(
@@ -24,6 +26,7 @@ param(
     [switch]$Split,
     [switch]$Windows,
     [string]$InstructionsLoop = "",
+    [string]$PromptRegex = $env:SSH_COMPANION_PROMPT_REGEX,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemArgs
 )
@@ -79,6 +82,12 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $McpFile = Join-Path $ScriptDir ".mcp.json"
 $SettingsFile = Join-Path $ScriptDir ".claude\settings.local.json"
 $McpLockName = "Global\ssh-companion-mcp"
+# Built-in tools the companion Claude gets (see COMPANION_TOOLS in _mcp-entry.sh).
+$CompanionTools = "Skill,ScheduleWakeup,CronCreate,CronList,CronDelete,ToolSearch"
+
+# Per-session --mcp-config file. A file rather than inline JSON: Windows
+# PowerShell strips the double quotes from arguments passed to native programs.
+function Get-McpConfigFile([string]$Name) { Join-Path $env:TEMP "$Name.mcp.json" }
 $sanitizedHost = $hostname -replace '[^A-Za-z0-9_-]', '-'
 $mcpSuffix = "${sanitizedHost}-${PID}"
 $mcpName = "ssh-companion-${mcpSuffix}"
@@ -125,7 +134,10 @@ function Invoke-McpPrune {
             }
         }
         $data | ConvertTo-Json -Depth 6 | Set-Content $McpFile
-        if ($stale.Count -gt 0) { Update-McpPermissions -Remove $stale }
+        if ($stale.Count -gt 0) {
+            Update-McpPermissions -Remove $stale
+            $stale | ForEach-Object { Remove-Item (Get-McpConfigFile $_) -ErrorAction SilentlyContinue }
+        }
     }
 }
 
@@ -136,7 +148,9 @@ function Add-McpEntry([string]$Name, [string]$Host) {
             if (Test-Path $example) { Copy-Item $example $McpFile } else { '{"mcpServers":{}}' | Set-Content $McpFile }
         }
         $data = Get-Content $McpFile -Raw | ConvertFrom-Json
-        $entry = [PSCustomObject]@{ command = "docker"; args = @("exec","-i","ssh-companion","python","/app/server.py","--hostname",$Host) }
+        $serverArgs = @("exec","-i","ssh-companion","python","/app/server.py")
+        if ($PromptRegex) { $serverArgs += @("--prompt-regex",$PromptRegex) }
+        $entry = [PSCustomObject]@{ command = "docker"; args = $serverArgs + @("--hostname",$Host) }
         $data.mcpServers | Add-Member -NotePropertyName $Name -NotePropertyValue $entry -Force
         $data | ConvertTo-Json -Depth 6 | Set-Content $McpFile
         Update-McpPermissions -Add @($Name)
@@ -150,6 +164,7 @@ function Remove-McpEntry([string]$Name) {
         $data.mcpServers.PSObject.Properties.Remove($Name)
         $data | ConvertTo-Json -Depth 6 | Set-Content $McpFile
         Update-McpPermissions -Remove @($Name)
+        Remove-Item (Get-McpConfigFile $Name) -ErrorAction SilentlyContinue
     }
 }
 
@@ -170,7 +185,14 @@ $cmd = ($RemArgs | ForEach-Object {
 }) -join ' '
 
 # Session output is untrusted, so the companion Claude is observe-only.
-$claudeFlags = "--disallowedTools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"
+# Only this session's MCP server, and no tools that run commands, read or write
+# files, or reach the network.
+$mcpConfigFile = Get-McpConfigFile $mcpName
+$serverEntry = (Get-Content $McpFile -Raw | ConvertFrom-Json).mcpServers.$mcpName
+# UTF-8 without a BOM (Set-Content in Windows PowerShell would use the ANSI code page).
+[IO.File]::WriteAllText($mcpConfigFile,
+    ([PSCustomObject]@{ mcpServers = [PSCustomObject]@{ $mcpName = $serverEntry } } | ConvertTo-Json -Depth 6))
+$claudeFlags = "--tools $CompanionTools --strict-mcp-config --mcp-config '$($mcpConfigFile -replace "'", "''")'"
 if ($InstructionsLoop) {
     $escaped = $InstructionsLoop -replace "'", "''"
     $claudeCmd = "claude '/loop $escaped' $claudeFlags"
