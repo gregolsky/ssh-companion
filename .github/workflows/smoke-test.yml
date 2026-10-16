@@ -17,7 +17,7 @@ jobs:
   container-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Run smoke test
         run: bash test/smoke-test.sh
